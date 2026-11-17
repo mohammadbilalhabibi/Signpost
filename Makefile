@@ -1,7 +1,7 @@
 PYTHON ?= python
 PORT ?= 7860
 
-.PHONY: install ingest index serve eval test lint format
+.PHONY: install ingest index reranker serve eval test lint format
 
 install:
 	$(PYTHON) -m pip install --upgrade pip
@@ -12,6 +12,10 @@ ingest:
 
 index:
 	$(PYTHON) scripts/build_index.py
+
+reranker:
+	$(PYTHON) -m pip install -e ".[export]"
+	$(PYTHON) scripts/export_reranker.py
 
 serve:
 	$(PYTHON) -m uvicorn app.api:app --host 0.0.0.0 --port $(PORT) --reload

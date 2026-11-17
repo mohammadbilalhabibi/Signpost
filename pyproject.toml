@@ -20,6 +20,7 @@ dependencies = [
     "sentence-transformers>=3.0",
     "rank-bm25>=0.2.2",
     "faiss-cpu>=1.8",
+    "onnxruntime>=1.18",  # int8 ONNX reranker (RERANKER_BACKEND=onnx)
     "numpy>=1.26",
     # Generation (OpenAI-compatible client)
     "openai>=1.40",
@@ -33,6 +34,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Only for the one-time reranker export: python scripts/export_reranker.py
+export = [
+    "onnx>=1.16",
+    "onnxscript>=0.2",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
@@ -66,4 +72,7 @@ quote-style = "double"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-ra"
+addopts = "-ra -m 'not slow'"
+markers = [
+    "slow: loads the real embedding/reranker models (run with: pytest -m slow)",
+]
