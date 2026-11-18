@@ -47,6 +47,8 @@ class Citation:
     title: str
     url: str
     snippet: str
+    doc_id: str
+    language: str
 
 
 @dataclass
@@ -187,7 +189,14 @@ class AnswerPipeline:
 
         cited = parse_citations(result.text, len(hits))
         citations = [
-            Citation(n, hits[n - 1].title, hits[n - 1].url, make_snippet(hits[n - 1]))
+            Citation(
+                number=n,
+                title=hits[n - 1].title,
+                url=hits[n - 1].url,
+                snippet=make_snippet(hits[n - 1]),
+                doc_id=hits[n - 1].doc_id,
+                language=hits[n - 1].language,
+            )
             for n in cited
         ]
         return Answer(

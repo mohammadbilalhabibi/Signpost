@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Degbot 2.0</title>
+    <meta
+      name="description"
+      content="Ask questions about studying at DIT and living in Bavaria, in English or German."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f5bea'/%3E%3Cpath d='M9 10h14v9H15l-4 4v-4H9z' fill='white'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo" aria-hidden="true">D</div>
+          <div>
+            <h1>Degbot 2.0 – Ask in English or German</h1>
+            <p class="note">
+              Answers come only from official public sources. Always check the linked source
+              before you act.
+            </p>
+          </div>
+        </div>
+        <button type="button" class="link-button" id="sources-button">Sources</button>
+      </header>
+
+      <main class="chat" id="chat" role="log" aria-live="polite" aria-relevant="additions">
+        <section class="welcome" id="welcome">
+          <h2>How can I help?</h2>
+          <p>
+            Ask about enrolment, Anmeldung, housing, health insurance, banking or exams at
+            Deggendorf Institute of Technology (DIT). Every answer shows its sources.
+          </p>
+          <div class="examples" id="examples">
+            <button type="button" class="example" lang="en">
+              How do I register my address in Deggendorf?
+            </button>
+            <button type="button" class="example" lang="en">Can I work as a student?</button>
+            <button type="button" class="example" lang="de">
+              Wie hoch ist der Semesterbeitrag?
+            </button>
+            <button type="button" class="example" lang="de">
+              Welche Unterlagen brauche ich für die Immatrikulation?
+            </button>
+          </div>
+        </section>
+      </main>
+
+      <form class="composer" id="composer" autocomplete="off">
+        <label class="visually-hidden" for="question">Your question</label>
+        <textarea
+          id="question"
+          name="question"
+          rows="1"
+          maxlength="500"
+          placeholder="Ask a question… / Stell eine Frage…"
+          required
+        ></textarea>
+        <div class="composer-side">
+          <span class="counter" id="counter" aria-live="off">0/500</span>
+          <button type="submit" class="send" id="send" aria-label="Send question">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 20.5 21 12 3 3.5l.01 6.6L15 12 3.01 13.9z" />
+            </svg>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <dialog class="sources-dialog" id="sources-dialog" aria-labelledby="sources-title">
+      <div class="dialog-head">
+        <h2 id="sources-title">Sources</h2>
+        <button type="button" class="icon-button" id="sources-close" aria-label="Close">
+          ✕
+        </button>
+      </div>
+      <p class="dialog-note" id="sources-count">Loading…</p>
+      <ul class="source-list" id="source-list"></ul>
+    </dialog>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

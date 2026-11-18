@@ -5,8 +5,8 @@ students at Deggendorf Institute of Technology (DIT) and in Bavaria: enrolment,
 Anmeldung, housing, health insurance, banking, exams. Every answer cites its
 sources; if the answer is not in the sources, Degbot says so.
 
-> Status: ingestion, chunking, retrieval (BM25, dense, hybrid, reranked) and answer
-> generation with citations are implemented. The API endpoint and evaluation are not
+> Status: ingestion, chunking, retrieval (BM25, dense, hybrid, reranked), answer
+> generation with citations and the web app are implemented. Evaluation is not
 > implemented yet.
 
 ## Stack
@@ -48,7 +48,7 @@ Without `make` (e.g. Windows), run the underlying commands directly:
 ```bash
 ruff check .
 pytest
-uvicorn app.api:app --reload --port 7860
+python -m uvicorn app.api:app --port 7860
 ```
 
 ## Ingestion
@@ -185,6 +185,36 @@ any OpenAI-compatible API; set `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM
 Requests time out after `LLM_TIMEOUT` seconds and are retried once. Newer OpenAI models
 reject `max_tokens`, so `LLM_TOKEN_PARAM=auto` sends `max_completion_tokens` for
 openai/azure and `max_tokens` elsewhere.
+
+## Web app
+
+Start the server (Windows, from the project folder), then open http://127.0.0.1:7860:
+
+```bash
+.venv\Scripts\python.exe -m uvicorn app.api:app --host 127.0.0.1 --port 7860
+```
+
+Startup takes ~25 s: the retriever, reranker and LLM client are loaded once (FastAPI
+lifespan) and shared by all requests. Avoid `--reload`: every reload loads the ~3 GB of
+models again.
+
+| Endpoint             | What it does                                                      |
+|----------------------|-------------------------------------------------------------------|
+| `GET /`              | Chat page ([app/static/](app/static/), plain HTML/CSS/JS)          |
+| `POST /api/ask`      | `{"question": "...", "mode": "hybrid_rerank"}` → answer, citations, `refused`, timings, `question_id` |
+| `POST /api/feedback` | `{"question_id": "...", "helpful": true, "comment": "..."}`       |
+| `GET /api/health`    | status, number of chunks/documents, loaded models                 |
+| `GET /api/sources`   | all source documents (title, url, language)                       |
+
+- Questions are limited to 500 characters; invalid requests get a JSON error
+  `{"error": {"code", "message", "details"}}` (422), an unreachable LLM a 503.
+- Rate limit per client IP: `RATE_LIMIT_PER_MINUTE` (10) questions and
+  `FEEDBACK_RATE_LIMIT_PER_MINUTE` (30) feedback requests; over the limit → 429 with
+  `Retry-After`. Behind a trusted proxy (e.g. Hugging Face Spaces) set
+  `TRUST_FORWARDED_FOR=true` so the real client IP is used.
+- Every question is logged to `logs/queries.jsonl` (id, timestamp, question, language,
+  refused, refusal reason, best score, cited doc_ids, timings) and feedback to
+  `logs/feedback.jsonl`. No IP addresses are logged. `logs/` is git-ignored.
 
 ## Layout
 

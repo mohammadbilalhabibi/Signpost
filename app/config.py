@@ -93,6 +93,22 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Web API
+    logs_dir: Path = PROJECT_ROOT / "logs"
+    rate_limit_per_minute: int = Field(
+        default=10, ge=1, description="Questions per client IP per minute (POST /api/ask)."
+    )
+    feedback_rate_limit_per_minute: int = Field(
+        default=30, ge=1, description="Feedback requests per client IP per minute."
+    )
+    trust_forwarded_for: bool = Field(
+        default=False,
+        description=(
+            "Use the first X-Forwarded-For address as client IP (only behind a trusted "
+            "reverse proxy, e.g. Hugging Face Spaces)."
+        ),
+    )
+
     # Ingestion
     ingest_user_agent: str = (
         "DegbotIngest/0.1 (non-commercial student project; bilingual RAG assistant)"
@@ -118,7 +134,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _resolve_paths(self) -> "Settings":
-        for name in ("chunks_path", "index_dir", "reranker_onnx_dir"):
+        for name in ("chunks_path", "index_dir", "reranker_onnx_dir", "logs_dir"):
             path = getattr(self, name)
             if not path.is_absolute():
                 object.__setattr__(self, name, PROJECT_ROOT / path)

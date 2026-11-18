@@ -114,7 +114,8 @@ def check_index(index_dir: Path, store: ChunkStore) -> dict:
 
 
 @lru_cache(maxsize=4)
-def _load_store(chunks_path: Path) -> ChunkStore:
+def load_store(chunks_path: Path) -> ChunkStore:
+    """Load chunks.jsonl once per process (shared by all retrievers and the API)."""
     return ChunkStore.from_jsonl(chunks_path)
 
 
@@ -138,7 +139,7 @@ def get_retriever(mode: Mode, settings: Settings | None = None) -> Retriever:
 
 def _make_retriever(mode: str, settings: Settings) -> Retriever:
     index_dir = Path(settings.index_dir)
-    store = _load_store(Path(settings.chunks_path))
+    store = load_store(Path(settings.chunks_path))
     check_index(index_dir, store)
 
     def bm25() -> BM25Retriever:

@@ -18,7 +18,7 @@ reranker:
 	$(PYTHON) scripts/export_reranker.py
 
 serve:
-	$(PYTHON) -m uvicorn app.api:app --host 0.0.0.0 --port $(PORT) --reload
+	$(PYTHON) -m uvicorn app.api:app --host 0.0.0.0 --port $(PORT)
 
 eval:
 	$(PYTHON) eval/run_eval.py
