@@ -119,8 +119,8 @@ def test_export_of_another_model_is_rejected(tmp_path: Path) -> None:
 def test_reranker_settings_defaults_and_path_resolution() -> None:
     settings = Settings(_env_file=None)
     assert settings.reranker_backend == "onnx"
-    assert settings.rerank_candidates == 10
-    assert settings.rerank_max_length == 512
+    assert settings.rerank_candidates == 20
+    assert settings.rerank_max_length == 256
     relative = Settings(_env_file=None, reranker_onnx_dir="models/custom")
     assert relative.reranker_onnx_dir == PROJECT_ROOT / "models" / "custom"
 
