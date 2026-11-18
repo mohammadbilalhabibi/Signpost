@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
 
 import httpx
@@ -15,11 +16,18 @@ from app.generation.pipeline import (
     AnswerPipeline,
     Citation,
     group_sources,
+    limit_per_document,
     make_snippet,
     parse_citations,
-    question_language,
+    response_language,
 )
-from app.generation.prompts import REFUSAL_TEXT, SYSTEM_PROMPT, build_user_prompt
+from app.generation.prompts import (
+    REFUSAL_TEXT,
+    SYSTEM_PROMPT,
+    build_user_prompt,
+    parse_response_type,
+)
+from app.generation.smalltalk import REPLIES, detect_smalltalk
 from app.retrieval.base import Hit, Retriever
 from app.retrieval.rerank import RerankedRetriever
 from tests.test_retrieval import CORPUS, make_retrievers
@@ -144,12 +152,41 @@ def test_numbers_beyond_the_passages_are_dropped() -> None:
     assert [c.number for c in result.citations] == [1]
 
 
-def test_answer_without_citations_counts_as_refused() -> None:
-    llm = FakeLLM("The context does not say. Please ask the International Office.")
+def test_not_found_reply_counts_as_refused() -> None:
+    llm = FakeLLM("TYPE: not_found\nThe passages do not say. Please ask the Welcome Centre.")
     result = reranked_pipeline(FIVE_SCORES, llm).answer("What is the visa fee?")
     assert result.refused is True
-    assert result.refusal_reason == "no_citations"
+    assert result.response_type == "not_found"
+    assert result.refusal_reason == "not_in_sources"
+    assert result.answer.startswith("The passages do not say")  # TYPE line removed
     assert result.citations == []
+
+
+def test_clarify_reply_is_not_a_refusal() -> None:
+    llm = FakeLLM("TYPE: clarify\nEU students pay X [1], non-EU students Y [2]. Which applies?")
+    result = reranked_pipeline(FIVE_SCORES, llm).answer("Which fees do I pay?")
+    assert result.response_type == "clarify" and result.refused is False
+    assert [c.number for c in result.citations] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("reply", "kind", "text"),
+    [
+        ("TYPE: answer\nYes [1].", "answer", "Yes [1]."),
+        ("**TYPE: clarify**\nWhich semester?", "clarify", "Which semester?"),
+        ("TYPE: Not Found\nNo.", "not_found", "No."),
+        ("TYPE: weird\nHm.", "answer", "Hm."),
+        ("No type line [1].", "answer", "No type line [1]."),
+    ],
+)
+def test_parse_response_type(reply: str, kind: str, text: str) -> None:
+    assert parse_response_type(reply) == (kind, text)
+
+
+def test_retrieved_chunks_are_reported() -> None:
+    result = reranked_pipeline(FIVE_SCORES, FakeLLM()).answer("Question?")
+    assert [r["doc_id"] for r in result.retrieved] == ["doc1", "doc2", "doc3", "doc4", "doc5"]
+    assert result.retrieved[0]["score"] == pytest.approx(0.9)
 
 
 def test_snippet_is_cut_at_a_word_boundary() -> None:
@@ -175,12 +212,47 @@ def test_low_score_refuses_without_calling_the_llm() -> None:
     assert result.best_score == pytest.approx(0.05)
 
 
-def test_refusal_is_in_the_question_language() -> None:
+def test_refusal_is_english_by_default_even_for_german_questions() -> None:
     llm = FakeLLM()
     result = reranked_pipeline([0.05], llm).answer("Wo gibt es die beste Pizza in München?")
-    assert result.language == "de"
-    assert result.answer == REFUSAL_TEXT["de"]
+    assert result.language == "en"
+    assert result.answer == REFUSAL_TEXT["en"]
     assert llm.calls == []
+
+
+def test_refusal_is_german_when_explicitly_requested() -> None:
+    result = reranked_pipeline([0.05], FakeLLM()).answer("Beste Pizza? Bitte auf Deutsch.")
+    assert result.language == "de" and result.answer == REFUSAL_TEXT["de"]
+
+
+@pytest.mark.parametrize("message", ["Hi! I am new here.", "hello", "Thanks!", "bye"])
+def test_smalltalk_is_answered_without_retrieval_or_llm(message: str) -> None:
+    class ExplodingRetriever(StaticRetriever):
+        def search(self, query: str, k: int) -> list[Hit]:
+            raise AssertionError("retrieval must not run for small talk")
+
+    llm = FakeLLM()
+    result = AnswerPipeline(ExplodingRetriever([]), llm, settings()).answer(message)
+    assert result.response_type == "smalltalk" and result.refused is False
+    assert result.citations == [] and llm.calls == []
+    assert result.answer in REPLIES.values()
+
+
+@pytest.mark.parametrize(
+    ("message", "kind"),
+    [
+        ("Hi! I am new here.", "greeting"),
+        ("Good morning", "greeting"),
+        ("Hi there, nice to meet you", "greeting"),
+        ("thank you so much", "thanks"),
+        ("Hello, how do I enrol?", None),
+        ("Hey, I am new here. Where is the Welcome Centre?", None),
+        ("History of Deggendorf", None),
+        ("Which dorm has an empty room available today?", None),
+    ],
+)
+def test_detect_smalltalk(message: str, kind: str | None) -> None:
+    assert detect_smalltalk(message) == kind
 
 
 def test_score_at_threshold_is_answered() -> None:
@@ -220,8 +292,30 @@ def test_llm_gets_numbered_passages_and_the_question() -> None:
     system, user = llm.calls[0]
     assert system == SYSTEM_PROMPT
     for i in range(1, 6):
-        assert f"[{i}] Source: Source {i}" in user
+        assert f"[{i}] Source {i}" in user
+    assert user.startswith("Today's date: ")
     assert user.rstrip().endswith("Question: How do I register?")
+
+
+def test_passages_carry_source_metadata_and_links() -> None:
+    meta = {
+        "source_id": "D30",
+        "publisher": "Stadt Deggendorf",
+        "edition_or_period": "Summer semester 2027",
+        "source_document_date": "2026-10-01",
+        "source_format": "translated_summary",
+        "source_language": "de",
+        "note": "Original German page is authoritative.",
+        "links": [{"text": "City form", "url": "https://example.org/form"}],
+    }
+    hit = Hit(**{**make_hit(1).__dict__, "meta": meta})
+    prompt = build_user_prompt("Q?", [hit], today=date(2026, 11, 18))
+    assert prompt.startswith("Today's date: 2026-11-18")
+    assert "[1] D30 · Source 1 — Stadt Deggendorf" in prompt
+    assert "Period: Summer semester 2027" in prompt and "Document date: 2026-10-01" in prompt
+    assert "Format: translated summary (original language de)" in prompt
+    assert "Source note: Original German page is authoritative." in prompt
+    assert "Links: City form: https://example.org/form" in prompt
 
 
 def test_prompt_uses_top_k_final_passages() -> None:
@@ -242,7 +336,7 @@ def test_pipeline_on_the_fake_corpus() -> None:
     llm = FakeLLM("82 Euro [1].")
     result = AnswerPipeline(retriever, llm, settings()).answer("Wie hoch ist der Semesterbeitrag?")
     assert result.citations[0].url == "https://example.org/fees-0000"
-    assert result.mode == "hybrid_rerank" and result.language == "de"
+    assert result.mode == "hybrid_rerank" and result.language == "en"
 
 
 def test_rerank_split_gives_the_same_result_as_search() -> None:
@@ -260,15 +354,14 @@ def test_build_user_prompt_strips_whitespace() -> None:
     ("question", "language"),
     [
         ("How do I register my address in Deggendorf?", "en"),
-        ("Wie hoch ist der Semesterbeitrag?", "de"),
-        ("Can I work as a student?", "en"),
-        ("Semesterbeitrag?", "de"),
-        ("Brauche ich eine Krankenversicherung?", "de"),
-        ("What is the best pizza in Munich?", "en"),
+        ("Wie hoch ist der Semesterbeitrag?", "en"),  # English by default
+        ("Please answer in German: how do I enrol?", "de"),
+        ("Kannst du auf Deutsch antworten?", "de"),
+        ("Is the course in German?", "en"),
     ],
 )
-def test_question_language(question: str, language: str) -> None:
-    assert question_language(question) == language
+def test_response_language(question: str, language: str) -> None:
+    assert response_language(question) == language
 
 
 # ---------------------------------------------------------------- LLM client
@@ -355,3 +448,31 @@ def test_sdk_errors_never_leak_the_key() -> None:
     with pytest.raises(GenerationError) as info:
         LLMClient(settings(llm_api_key=secret), client=fake_sdk(fail)).complete("s", "u")
     assert secret not in str(info.value) and "[REDACTED]" in str(info.value)
+
+
+# ------------------------------------------------------- per-document cap
+
+
+def hit_of(doc: str, n: int, score: float) -> Hit:
+    return Hit(f"{doc}-{n:04d}", doc, score, "t", doc, f"https://x/{doc}", "en")
+
+
+def test_limit_per_document_keeps_other_sources() -> None:
+    hits = [hit_of("D08", i, 0.9 - i / 100) for i in range(5)] + [
+        hit_of("D14", 0, 0.5),
+        hit_of("D15", 0, 0.4),
+    ]
+    chosen = limit_per_document(hits, k=5, cap=3)
+    assert [h.doc_id for h in chosen] == ["D08", "D08", "D08", "D14", "D15"]
+
+
+def test_limit_per_document_fills_up_when_few_documents() -> None:
+    hits = [hit_of("D02", i, 0.9 - i / 100) for i in range(5)] + [hit_of("D04", 0, 0.95)]
+    chosen = limit_per_document(hits, k=5, cap=3)
+    assert len(chosen) == 5
+    assert [h.score for h in chosen] == sorted((h.score for h in chosen), reverse=True)
+
+
+def test_limit_per_document_can_be_disabled() -> None:
+    hits = [hit_of("D08", i, 0.9 - i / 100) for i in range(6)]
+    assert limit_per_document(hits, k=5, cap=0) == hits[:5]

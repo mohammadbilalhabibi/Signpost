@@ -1,4 +1,4 @@
-"""Question -> retrieval -> (refusal or LLM answer) -> citations.
+"""Question -> (small talk | retrieval -> refusal or LLM answer) -> citations.
 
 Build an ``AnswerPipeline`` once (models and the LLM client are loaded then) and call
 ``answer(question)`` for each question. ``answer(question, mode)`` at module level does the
@@ -12,31 +12,28 @@ import time
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 
-from langdetect import DetectorFactory, LangDetectException, detect_langs
-
 from app.config import Settings, get_settings
 from app.generation.llm_client import LLMClient
-from app.generation.prompts import REFUSAL_TEXT, SYSTEM_PROMPT, build_user_prompt
+from app.generation.prompts import (
+    REFUSAL_TEXT,
+    SYSTEM_PROMPT,
+    build_user_prompt,
+    parse_response_type,
+)
+from app.generation.smalltalk import REPLIES, detect_smalltalk
 from app.retrieval.base import Hit, Retriever
 from app.retrieval.factory import Mode, get_retriever
 from app.retrieval.rerank import RerankedRetriever
 
-DetectorFactory.seed = 0  # reproducible langdetect results
-
 SNIPPET_CHARS = 200
 _CITATION_RE = re.compile(r"\[([\d\s,;\-–]+)\]")
-_WORD_RE = re.compile(r"[^\W\d_]+")
-_GERMAN_WORDS = (
-    "wie was wo wann warum wieso welche welcher welches wer ich ist sind der die das den dem "
-    "und oder muss müssen kann darf brauche gibt es mein meine mich mir für nicht bei mit "
-    "eine ein einen zum zur im auf"
+# Explicit requests for a German answer; everything else is answered in English.
+_GERMAN_REQUEST_RE = re.compile(
+    r"\bauf deutsch\b"
+    r"|\b(answer|reply|respond|write|explain|tell me|translate)\b[^.?!]*\b(in|into) german\b"
+    r"|\bin german,? please\b|\bplease\b[^.?!]*\bin german\b",
+    re.IGNORECASE,
 )
-_ENGLISH_WORDS = (
-    "how what where when why which who i is are the and or must can may do does need my me "
-    "for not with a an to of at on"
-)
-_GERMAN_HINTS = frozenset(_GERMAN_WORDS.split())
-_ENGLISH_HINTS = frozenset(_ENGLISH_WORDS.split())
 
 
 @dataclass(frozen=True)
@@ -75,9 +72,12 @@ class Answer:
     language: str
     best_score: float | None
     timings_ms: dict[str, float | None] = field(default_factory=dict)
-    refusal_reason: str | None = None  # "no_hits" | "low_score" | "no_citations"
+    refusal_reason: str | None = None  # "no_hits" | "low_score" | "not_in_sources"
     model: str | None = None
     sources: list[Source] = field(default_factory=list)  # citations grouped by document
+    # "answer" | "clarify" (asks for a missing detail) | "not_found" | "refused" | "smalltalk"
+    response_type: str = "answer"
+    retrieved: list[dict] = field(default_factory=list)  # [{chunk_id, doc_id, score}, ...]
 
     def to_dict(self) -> dict:
         """JSON-serialisable representation (for the API)."""
@@ -87,18 +87,9 @@ class Answer:
 # ------------------------------------------------------------------- helpers
 
 
-def question_language(question: str) -> str:
-    """Return "de" or "en" for a (possibly very short) question; English if unsure."""
-    words = _WORD_RE.findall(question.lower())
-    german = sum(w in _GERMAN_HINTS for w in words) + any(c in question.lower() for c in "äöüß")
-    english = sum(w in _ENGLISH_HINTS for w in words)
-    if german != english:
-        return "de" if german > english else "en"
-    try:
-        probs = {c.lang: c.prob for c in detect_langs(question)}
-    except LangDetectException:
-        return "en"
-    return "de" if probs.get("de", 0.0) > probs.get("en", 0.0) else "en"
+def response_language(question: str) -> str:
+    """English by default; "de" only if the user explicitly asks for a German answer."""
+    return "de" if _GERMAN_REQUEST_RE.search(question) else "en"
 
 
 def parse_citations(text: str, n_passages: int) -> list[int]:
@@ -132,6 +123,28 @@ def group_sources(citations: list[Citation]) -> list[Source]:
         )
         for group in by_doc.values()
     ]
+
+
+def limit_per_document(hits: list[Hit], k: int, cap: int) -> list[Hit]:
+    """Best ``k`` hits keeping at most ``cap`` chunks per document (0 = no cap).
+
+    Keeps one long page from filling every slot, so questions that need several sources
+    (e.g. all four residences) can get them. If too few documents are left, the remaining
+    slots are filled with the next best chunks regardless of the cap.
+    """
+    if cap <= 0:
+        return hits[:k]
+    chosen: list[Hit] = []
+    per_doc: dict[str, int] = {}
+    for hit in hits:
+        if per_doc.get(hit.doc_id, 0) < cap:
+            chosen.append(hit)
+            per_doc[hit.doc_id] = per_doc.get(hit.doc_id, 0) + 1
+        if len(chosen) == k:
+            return chosen
+    rest = [h for h in hits if h not in chosen]
+    chosen += rest[: k - len(chosen)]
+    return sorted(chosen, key=lambda h: -h.score)
 
 
 def make_snippet(hit: Hit, max_chars: int = SNIPPET_CHARS) -> str:
@@ -178,17 +191,20 @@ class AnswerPipeline:
         return isinstance(self.retriever, RerankedRetriever)
 
     def retrieve(self, question: str) -> tuple[list[Hit], dict[str, float | None]]:
-        """Top ``TOP_K_FINAL`` hits plus retrieval/reranking times in ms."""
+        """Top ``TOP_K_FINAL`` hits (at most ``MAX_CHUNKS_PER_DOC`` per document) and timings."""
         k = self.settings.top_k_final
+        cap = self.settings.max_chunks_per_doc
         start = time.perf_counter()
         if isinstance(self.retriever, RerankedRetriever):
             candidates = self.retriever.inner.search(question, max(self.retriever.candidates, k))
             mid = time.perf_counter()
-            hits = self.retriever.rerank(question, candidates, k)
+            ranked = self.retriever.rerank(question, candidates, len(candidates))
             end = time.perf_counter()
-            return hits, {"retrieval": _ms(mid - start), "reranking": _ms(end - mid)}
-        hits = self.retriever.search(question, k)
-        return hits, {"retrieval": _ms(time.perf_counter() - start), "reranking": None}
+            timings = {"retrieval": _ms(mid - start), "reranking": _ms(end - mid)}
+            return limit_per_document(ranked, k, cap), timings
+        hits = self.retriever.search(question, k * 3 if cap else k)
+        timings = {"retrieval": _ms(time.perf_counter() - start), "reranking": None}
+        return limit_per_document(hits, k, cap), timings
 
     def answer(self, question: str) -> Answer:
         """Answer one question from the sources, or refuse without calling the LLM."""
@@ -196,9 +212,22 @@ class AnswerPipeline:
         if not question:
             raise ValueError("question is empty")
         start = time.perf_counter()
-        language = question_language(question)
+        language = response_language(question)
+
+        smalltalk = detect_smalltalk(question)
+        if smalltalk:
+            return Answer(
+                question, REPLIES[smalltalk], [], False, self.mode, "en", None,
+                {"retrieval": None, "reranking": None, "generation": None,
+                 "total": _ms(time.perf_counter() - start)},
+                response_type="smalltalk",
+            )  # fmt: skip
+
         hits, timings = self.retrieve(question)
         best = hits[0].score if hits else None
+        retrieved = [
+            {"chunk_id": h.chunk_id, "doc_id": h.doc_id, "score": round(h.score, 4)} for h in hits
+        ]
 
         reason = None
         if not hits:
@@ -210,15 +239,16 @@ class AnswerPipeline:
             timings["total"] = _ms(time.perf_counter() - start)
             return Answer(
                 question, REFUSAL_TEXT[language], [], True, self.mode, language, best,
-                timings, refusal_reason=reason,
+                timings, refusal_reason=reason, response_type="refused", retrieved=retrieved,
             )  # fmt: skip
 
         gen_start = time.perf_counter()
         result = self.llm.complete(SYSTEM_PROMPT, build_user_prompt(question, hits))
         timings["generation"] = _ms(time.perf_counter() - gen_start)
         timings["total"] = _ms(time.perf_counter() - start)
+        response_type, text = parse_response_type(result.text)
 
-        cited = parse_citations(result.text, len(hits))
+        cited = parse_citations(text, len(hits))
         citations = [
             Citation(
                 number=n,
@@ -230,18 +260,21 @@ class AnswerPipeline:
             )
             for n in cited
         ]
+        not_found = response_type == "not_found"
         return Answer(
             question=question,
-            answer=result.text,
+            answer=text,
             citations=citations,
-            refused=not citations,
+            refused=not_found,
             mode=self.mode,
             language=language,
             best_score=best,
             timings_ms=timings,
-            refusal_reason=None if citations else "no_citations",
+            refusal_reason="not_in_sources" if not_found else None,
             model=result.model,
             sources=group_sources(citations),
+            response_type=response_type,
+            retrieved=retrieved,
         )
 
 

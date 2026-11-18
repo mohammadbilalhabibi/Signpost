@@ -329,7 +329,7 @@ def test_list_sources_deduplicates_chunks_of_one_document() -> None:
 def test_chat_page_is_served_at_root(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
-    assert "Signpost – Ask in English or German" in response.text
+    assert "Signpost – Your guide to arriving at DIT" in response.text
     for asset in ("/app.js", "/style.css"):
         assert client.get(asset).status_code == 200
 

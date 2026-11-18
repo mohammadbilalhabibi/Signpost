@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     )
 
     # Data & index locations (relative paths are resolved against the project root)
+    # Curated source collection (sources.json, text/, documents/)
+    collection_dir: Path = PROJECT_ROOT / "DIT_Arrival_RAG_English" / "DIT_Arrival_RAG_English"
     chunks_path: Path = PROJECT_ROOT / "data" / "processed" / "chunks.jsonl"
     index_dir: Path = PROJECT_ROOT / "index"
 
@@ -85,15 +87,20 @@ class Settings(BaseSettings):
     top_k_final: int = Field(default=5, ge=1, description="Passages passed to the LLM.")
     rrf_k: int = Field(default=60, ge=1, description="Reciprocal Rank Fusion constant.")
     refusal_threshold: float = Field(
-        default=0.1,
+        default=0.02,
         ge=0.0,
         le=1.0,
         description=(
             "Minimum reranker score (0-1) of the best passage; below it the assistant "
-            "refuses without calling the LLM. Provisional: chosen between an off-topic "
-            "question (0.0003) and the lowest answerable one (0.23) with the int8 reranker; "
-            "to be tuned on the evaluation set."
+            "refuses without calling the LLM. Measured on the arrival collection (int8 "
+            "reranker, 20 candidates, 256 tokens): 8 off-topic questions scored <= 0.0031, "
+            "the lowest answerable acceptance question 0.061."
         ),
+    )
+    max_chunks_per_doc: int = Field(
+        default=3,
+        ge=0,
+        description="At most this many of the final passages from one document (0 = no cap).",
     )
 
     # Web API
@@ -137,7 +144,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _resolve_paths(self) -> "Settings":
-        for name in ("chunks_path", "index_dir", "reranker_onnx_dir", "logs_dir"):
+        for name in ("collection_dir", "chunks_path", "index_dir", "reranker_onnx_dir", "logs_dir"):
             path = getattr(self, name)
             if not path.is_absolute():
                 object.__setattr__(self, name, PROJECT_ROOT / path)

@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
+from typing import Any
 
 TokenCounter = Callable[[str], int]
 
@@ -132,6 +133,7 @@ class Chunk:
     section: str
     text: str
     n_tokens: int
+    meta: dict = field(default_factory=dict)  # source metadata (publisher, dates, period, ...)
 
     def to_dict(self) -> dict:
         """Return a JSON-serialisable dict."""
@@ -259,7 +261,7 @@ class Chunker:
             chunk_tokens // 4 if min_section_tokens is None else min_section_tokens
         )
 
-    def chunk(self, doc: Mapping[str, str]) -> list[Chunk]:
+    def chunk(self, doc: Mapping[str, Any]) -> list[Chunk]:
         """Chunk one document. Returns an empty list if it has no text."""
         title = (doc.get("title") or "").strip()
         chunks: list[Chunk] = []
@@ -279,6 +281,7 @@ class Chunker:
                         section=section.heading,
                         text=text,
                         n_tokens=self.count_tokens(text),
+                        meta=dict(doc.get("meta") or {}),
                     )
                 )
         return chunks

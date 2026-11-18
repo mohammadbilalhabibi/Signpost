@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from app.ingest.jsonl import read_jsonl
 
@@ -22,6 +23,8 @@ class Hit:
     title: str
     url: str
     language: str
+    # source metadata from ingestion (publisher, edition/period, dates, notes, ...)
+    meta: Mapping[str, Any] = field(default_factory=dict, compare=False, hash=False)
 
 
 class Retriever(ABC):
@@ -71,6 +74,7 @@ class ChunkStore:
             title=c.get("title", ""),
             url=c.get("url", ""),
             language=c.get("language", "unknown"),
+            meta=c.get("meta") or {},
         )
 
     def fingerprint(self) -> str:

@@ -1,0 +1,90 @@
+{
+  "reviewed_on": "2026-11-18",
+  "items": [
+    {
+      "title": "DIT Handbook for International Students",
+      "url": "https://th-deg.de/Studierende/Antraege-und-Organisatorisches/infos-fuer-erstsemester/international_handbook.pdf",
+      "decision": "Excluded from ingestion",
+      "reason": "Contains an approximately EUR 70/month insurance estimate and older residence-permit photo and office instructions. Also mixes exchange and degree-student procedures.",
+      "replacements": [
+        "D19",
+        "D20",
+        "D24",
+        "D27",
+        "D28",
+        "D30"
+      ]
+    },
+    {
+      "title": "DIT Application Procedure for International Students",
+      "url": "https://ec.th-deg.de/Studieninteressierte/Bewerbung/application_procedure_int_en.pdf",
+      "decision": "Excluded from ingestion",
+      "reason": "The funding figure is explicitly labelled as of 2023.",
+      "replacements": [
+        "D01",
+        "D20",
+        "D21"
+      ]
+    },
+    {
+      "title": "DIT old health-insurance leaflet",
+      "url": "https://th-deg.de/Studierende/Antraege-und-Organisatorisches/Antraege/healt-insurance.pdf",
+      "decision": "Excluded from ingestion",
+      "reason": "Describes paper-certificate submission. Current DIT guidance requires electronic confirmation.",
+      "replacements": [
+        "D28"
+      ]
+    },
+    {
+      "title": "DIT international prospectus 2026",
+      "url": "https://www.th-deg.de/Studieninteressierte/infos-fuer-internationale-studieninteressierte/International_Prospectus_2026_web.pdf",
+      "decision": "Index link retained for optional background reading",
+      "reason": "Large programme catalogue with generic accommodation estimates. More specific arrival and housing sources are supplied.",
+      "replacements": [
+        "D08",
+        "D14",
+        "D15",
+        "D16",
+        "D17"
+      ]
+    },
+    {
+      "title": "DIT general FAQ and practical information - age-based insurance statements",
+      "url": "https://www.th-deg.de/en/study-with-us/advice-support/faqs-potentials",
+      "decision": "Whole page excluded; D28 contains only the relevant general electronic-confirmation and EHIC passages",
+      "reason": "Broad statements about insurance after age 30 need individual insurer confirmation. Avoid presenting private insurance as compulsory solely because of age.",
+      "replacements": [
+        "D24",
+        "D28"
+      ]
+    },
+    {
+      "title": "DIT academic calendar - summer semester 2027",
+      "url": "https://www.th-deg.de/en/students/documents",
+      "decision": "Calendar omitted from this arrival corpus",
+      "reason": "The summer-2027 section includes examination and break entries dated 2026. Confirm dates with DIT before adding an academic-calendar answer.",
+      "replacements": []
+    },
+    {
+      "title": "DIT accommodation page - residence inventory",
+      "url": "https://www.th-deg.de/accommodation",
+      "decision": "Conflicting inventory count and Bahnhofstrasse description omitted from D08",
+      "reason": "The university page says three residences and gives a different Bahnhofstrasse apartment count. The provider lists four complexes and supplies individual residence details.",
+      "replacements": [
+        "D14",
+        "D15",
+        "D16",
+        "D17"
+      ]
+    },
+    {
+      "title": "DAAD general health-insurance cost estimate",
+      "url": "https://www.daad.de/en/studying-in-germany/living-in-germany/health-insurance/",
+      "decision": "Cost estimate omitted from selected excerpt D24",
+      "reason": "A broad monthly estimate is insufficient for a current individual premium. Confirm the actual contribution with the chosen insurer.",
+      "replacements": [
+        "D24"
+      ]
+    }
+  ]
+}

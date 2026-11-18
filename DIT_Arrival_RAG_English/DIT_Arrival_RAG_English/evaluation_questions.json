@@ -1,0 +1,374 @@
+{
+  "purpose": "Acceptance questions for the future chatbot. These are evaluation rubrics, not measured accuracy results. Keep this file out of the retrieval corpus.",
+  "questions": [
+    {
+      "id": "Q01",
+      "question": "I received my admission letter. How do I enrol at DIT?",
+      "expected_source_ids": [
+        "D01"
+      ],
+      "expected_behavior": "Explain Primuss confirmation, photo/document upload, payment and the individual admission-letter deadline.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q02",
+      "question": "What documents does DIT generally ask for at enrolment?",
+      "expected_source_ids": [
+        "D01"
+      ],
+      "expected_behavior": "List the source documents with applicable qualifications. Explain that the admission letter controls the individual list.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q03",
+      "question": "Is there one enrolment deadline for every DIT programme?",
+      "expected_source_ids": [
+        "D01"
+      ],
+      "expected_behavior": "Explain that the deadline varies and is in the admission letter. Do not invent a universal date.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q04",
+      "question": "Can DIT finish my enrolment without digital insurance confirmation?",
+      "expected_source_ids": [
+        "D28"
+      ],
+      "expected_behavior": "Explain the electronic confirmation requirement and the statutory insurer role.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q05",
+      "question": "I have an EHIC from an EU country. What do I send to DIT?",
+      "expected_source_ids": [
+        "D28"
+      ],
+      "expected_behavior": "Explain contacting a public insurer with the EHIC for assessment and electronic confirmation.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q06",
+      "question": "I am newly enrolled and gave DIT a German postal address. How will I get my student card?",
+      "expected_source_ids": [
+        "D02"
+      ],
+      "expected_behavior": "Explain the mailing procedure and the approximate week before semester start stated in the snapshot.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q07",
+      "question": "I gave DIT an address abroad. Where can I get my student card?",
+      "expected_source_ids": [
+        "D02"
+      ],
+      "expected_behavior": "Explain collection at the Centre for Studies from semester start.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q08",
+      "question": "Do I need to validate my student card every semester?",
+      "expected_source_ids": [
+        "D02",
+        "D04"
+      ],
+      "expected_behavior": "Explain validation at a terminal and the semester update.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q09",
+      "question": "Where can I download my enrolment certificate?",
+      "expected_source_ids": [
+        "D06",
+        "D04"
+      ],
+      "expected_behavior": "Point to the Primuss study-certificates function. Distinguish next-semester enrolment certificate availability from re-registration confirmation.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q10",
+      "question": "How do I activate my university account?",
+      "expected_source_ids": [
+        "D06"
+      ],
+      "expected_behavior": "Use the emailed individual check-in link and matriculation number.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q11",
+      "question": "Is my applicant number the same as my matriculation number?",
+      "expected_source_ids": [
+        "D06"
+      ],
+      "expected_behavior": "State that they are different and point to the admission registration certificate for the matriculation number.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q12",
+      "question": "Who can help me with DIT IT problems?",
+      "expected_source_ids": [
+        "D06"
+      ],
+      "expected_behavior": "Provide the DIT IT support contact from the source. Keep the ECRI-specific support contact scoped to ECRI.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q13",
+      "question": "I am a new non-EU degree student with no exemption. Which DIT fees should I expect?",
+      "expected_source_ids": [
+        "D03",
+        "D04"
+      ],
+      "expected_behavior": "Distinguish the EUR 60 application fee, EUR 500 semester service fee and separate semester-specific student-union fee. Ask which semester.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q14",
+      "question": "Do EU students pay the international service fee?",
+      "expected_source_ids": [
+        "D03"
+      ],
+      "expected_behavior": "Use the stated EU/EEA exemption. Do not claim exemption from the separate student-union contribution.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q15",
+      "question": "When is re-registration for summer semester 2027?",
+      "expected_source_ids": [
+        "D05"
+      ],
+      "expected_behavior": "Give 8 January to 5 February 2027, with the semester explicitly named.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q16",
+      "question": "What is the student-union contribution for summer semester 2027?",
+      "expected_source_ids": [
+        "D04",
+        "D05"
+      ],
+      "expected_behavior": "Give EUR 87 for that semester. Explain that additional service fees may apply depending on status.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q17",
+      "question": "What student-union contribution is listed from winter 2027/28?",
+      "expected_source_ids": [
+        "D04"
+      ],
+      "expected_behavior": "Give EUR 92 and preserve the stated semester applicability.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q18",
+      "question": "I missed the re-registration period. What should I do?",
+      "expected_source_ids": [
+        "D04"
+      ],
+      "expected_behavior": "Direct the student to their responsible Centre for Studies clerk. Do not promise automatic reinstatement.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q19",
+      "question": "Can I apply for Studierendenwerk housing before receiving admission?",
+      "expected_source_ids": [
+        "D12"
+      ],
+      "expected_behavior": "Explain that an application before admission is possible and does not itself create a rental contract.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q20",
+      "question": "Is there a fixed annual deadline to apply for a dorm?",
+      "expected_source_ids": [
+        "D11"
+      ],
+      "expected_behavior": "For these Studierendenwerk residences, applications can be made at any time.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q21",
+      "question": "How do I keep my housing application active?",
+      "expected_source_ids": [
+        "D11"
+      ],
+      "expected_behavior": "Explain the monthly reminder on the 20th and confirmation within seven days.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q22",
+      "question": "Can I edit a confirmed Studierendenwerk housing application myself?",
+      "expected_source_ids": [
+        "D11"
+      ],
+      "expected_behavior": "Explain that housing staff must make the change and direct the student to the relevant contact.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q23",
+      "question": "Can I collect my room keys on Sunday?",
+      "expected_source_ids": [
+        "D13",
+        "D12"
+      ],
+      "expected_behavior": "Explain the normal restriction on weekend and public-holiday handovers and refer to the caretaker for arrangements.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q24",
+      "question": "Can I move into my dorm before the contract begins?",
+      "expected_source_ids": [
+        "D12",
+        "D13"
+      ],
+      "expected_behavior": "Explain the first-working-day handover rule and the previous tenant’s right to occupy the room.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q25",
+      "question": "What is the address of Finkenhof Detterstrasse?",
+      "expected_source_ids": [
+        "D15"
+      ],
+      "expected_behavior": "Give Detterstrasse 21, 94469 Deggendorf.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q26",
+      "question": "Does the Untere Himmelreichstrasse residence have a private kitchen and bathroom?",
+      "expected_source_ids": [
+        "D17"
+      ],
+      "expected_behavior": "Answer from the accommodation description. Do not infer current vacancy.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q27",
+      "question": "Which Studierendenwerk residences are listed in Deggendorf?",
+      "expected_source_ids": [
+        "D14",
+        "D15",
+        "D16",
+        "D17"
+      ],
+      "expected_behavior": "List Bahnhofstrasse, Detterstrasse, Frauenstrasse and Untere Himmelreichstrasse.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q28",
+      "question": "I am an exchange student interested in Untere Himmelreichstrasse. How should I apply?",
+      "expected_source_ids": [
+        "D08"
+      ],
+      "expected_behavior": "Use the specifically labelled International Office route for exchange students.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q29",
+      "question": "Is my rental contract alone the landlord confirmation?",
+      "expected_source_ids": [
+        "D29",
+        "D30"
+      ],
+      "expected_behavior": "Explain the housing-provider move-in confirmation requirement. Link to the official city form page.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q30",
+      "question": "I have just moved into a flat in Deggendorf. When should I register?",
+      "expected_source_ids": [
+        "D30",
+        "D29"
+      ],
+      "expected_behavior": "Give the ordinary two-week deadline from moving in. Preserve special temporary-stay exceptions if relevant.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q31",
+      "question": "Are address registration and a student residence permit the same process?",
+      "expected_source_ids": [
+        "D30",
+        "D27"
+      ],
+      "expected_behavior": "Distinguish the Bürgeramt address process from the immigration-authority permit process.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q32",
+      "question": "Which documents does Deggendorf ask for for a student residence permit?",
+      "expected_source_ids": [
+        "D27"
+      ],
+      "expected_behavior": "Use the local checklist, including enrolment and study-time certificates, funds, passport, housing and insurance. Cite the original authority URL.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q33",
+      "question": "Does the residence-permit photo need a QR code?",
+      "expected_source_ids": [
+        "D27"
+      ],
+      "expected_behavior": "Explain that the German checklist specifies a QR code and that this point is a labelled translation in the collection.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q34",
+      "question": "My study visa expires soon. Can I wait three months after arrival to apply for the permit?",
+      "expected_source_ids": [
+        "D20",
+        "D27"
+      ],
+      "expected_behavior": "Explain that the application must be submitted before the visa expires. Direct the student to the local authority.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q35",
+      "question": "What do banks usually ask for to open an account?",
+      "expected_source_ids": [
+        "D22"
+      ],
+      "expected_behavior": "List the general documents and qualify bank/account-specific requirements and fees.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q36",
+      "question": "We share a flat. Does every student pay the broadcasting contribution separately?",
+      "expected_source_ids": [
+        "D25"
+      ],
+      "expected_behavior": "Apply the shared-dwelling rule and explain the role of the paying resident’s contribution number.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q37",
+      "question": "Does being a student automatically exempt me from the broadcasting contribution?",
+      "expected_source_ids": [
+        "D25"
+      ],
+      "expected_behavior": "Explain that student status alone does not create an exemption; use the stated eligibility rules.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q38",
+      "question": "Can I work while studying as a non-EU student?",
+      "expected_source_ids": [
+        "D23"
+      ],
+      "expected_behavior": "Give qualified guidance from the source, preserve the day-account or permitted weekly approach and ask about residence conditions and job type where needed.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q39",
+      "question": "Hi! I am new here.",
+      "expected_source_ids": [],
+      "expected_behavior": "Greet the student warmly and ask what they need help with. No source citation or retrieval-based refusal is required.",
+      "check_status": "not_run_against_chatbot"
+    },
+    {
+      "id": "Q40",
+      "question": "Which dorm has an empty room available today?",
+      "expected_source_ids": [],
+      "expected_behavior": "Explain that the static collection does not establish live availability and direct the student to the housing provider/application portal. Do not invent a vacancy.",
+      "check_status": "not_run_against_chatbot"
+    }
+  ]
+}

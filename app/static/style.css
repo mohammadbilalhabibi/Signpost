@@ -271,7 +271,14 @@ a {
   color: var(--accent-text);
 }
 
+.clarify-banner {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
 .refusal-banner,
+.clarify-banner,
 .error-banner {
   display: flex;
   gap: 8px;

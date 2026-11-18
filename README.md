@@ -1,15 +1,17 @@
 # Signpost
 
-**AI-powered bilingual (German/English) assistant for international students.**
+**AI-powered assistant for international students arriving at DIT, with cited answers
+from official sources.**
 
-Signpost answers questions of international students at Deggendorf Institute of
-Technology (DIT) and in Bavaria: enrolment, Anmeldung, housing, health insurance,
-banking, exams. Every answer cites its sources; if the answer is not in the sources,
-Signpost says so.
+Signpost answers questions of international students starting at Deggendorf Institute
+of Technology (DIT) and settling in Deggendorf: enrolment, fees and re-registration,
+student ID and IT accounts, student housing, address registration, residence permits,
+health insurance, banking, student jobs. Answers are in English. Every answer cites the
+original official page; if the answer is not in the sources, Signpost says so.
 
 > Status: ingestion, chunking, retrieval (BM25, dense, hybrid, reranked), answer
-> generation with citations and the web app are implemented. Evaluation is not
-> implemented yet.
+> generation with citations, the web app and an acceptance-question evaluation
+> ([eval/](eval/)) are implemented.
 
 ## Stack
 
@@ -53,47 +55,53 @@ pytest
 python -m uvicorn app.api:app --port 7860
 ```
 
-## Ingestion
+## Knowledge base and ingestion
 
-Sources are listed in [data/sources.yaml](data/sources.yaml) (`url`, `type: html|pdf`,
-optional `title`). Then run:
+The answer corpus is the curated collection in
+[DIT_Arrival_RAG_English/DIT_Arrival_RAG_English/](DIT_Arrival_RAG_English/DIT_Arrival_RAG_English/)
+(`COLLECTION_DIR`): 30 English sources about arriving at DIT and settling in Deggendorf
+(DIT, Studierendenwerk Niederbayern/Oberpfalz, City and District of Deggendorf, Make it in
+Germany, DAAD, ARD ZDF Deutschlandradio Beitragsservice, German federal law translation).
+Its `sources.json` maps every source to its original URL, publisher, dates and
+edition/semester; see the collection's own README for source precedence and coverage
+limits.
 
 ```bash
-python scripts/ingest.py             # reuses files already downloaded to data/raw/
-python scripts/ingest.py --refresh   # re-download everything
-python scripts/ingest.py --rechunk   # only re-chunk documents.jsonl (no downloads)
+python scripts/ingest.py             # collection -> data/processed/{documents,chunks}.jsonl
+python scripts/ingest.py --rechunk   # only re-chunk documents.jsonl
+python scripts/build_index.py        # then rebuild the BM25 + FAISS indexes
 ```
 
-What it does:
+What [app/ingest/collection.py](app/ingest/collection.py) does:
 
-1. **Download politely** – checks `robots.txt`, waits at least 1 s between requests to
-   the same host (longer if `Crawl-delay` says so), sends `INGEST_USER_AGENT`. Failed
-   URLs are logged and skipped; bot-protection/challenge pages are detected and
-   reported as failed (never bypassed). Raw files + a `.meta.json` go to `data/raw/`.
-2. **Extract text** – trafilatura for HTML (main content only, headings kept as `#`),
-   PyMuPDF for PDFs (larger fonts and short bold lines such as `§ 4 Prüfungskommission`
-   become headings, wrapped lines are re-joined, table cells joined with `|`, running
-   headers/footers, page numbers, TOC lines and superscript numbers dropped). Cookie banners and lines repeated
-   across pages of the same site are removed.
-3. **Detect language** (`de`/`en`, langdetect) and write
-   `data/processed/documents.jsonl` (`doc_id, title, url, language, fetched_at, text`).
-4. **Chunk** ([app/ingest/chunker.py](app/ingest/chunker.py)) – split at headings, merge
-   small neighbouring sections under the same parent heading (below
-   `CHUNK_MIN_SECTION_TOKENS`, default a quarter of the chunk size), then
-   pack whole sentences into chunks of at most `CHUNK_TOKENS` (default 350, counted with
-   the multilingual-e5 tokenizer, prefix included) with `CHUNK_OVERLAP` (default 15 %)
-   overlap. Each chunk starts with `"<title> > <section>"`. Written to
-   `data/processed/chunks.jsonl` (`chunk_id, doc_id, title, url, language, section,
-   text, n_tokens`).
-5. Prints a summary: documents per language, number of chunks, average chunk length,
-   failed URLs.
+1. Reads `sources.json` and uses **only `ingest: true`** sources, each **once**: the clean
+   English text copy (`text_path`, Markdown with YAML front matter) or, if that is
+   missing, the PDF (`pdf_path`, SHA-256 checked). `reference_only/`, `Source_Guide.pdf`,
+   the README, `source_review.json` and
+   `evaluation_questions.json` are never part of the corpus.
+2. Keeps English content only (sources whose text is not English are rejected). D27 and
+   D30 contain labelled English translations of German authority pages; they are cited
+   with the original official URLs.
+3. Moves Markdown link lines out of the indexed text into per-chunk link metadata (the
+   URLs contained German words that added noise to keyword search), so the LLM still sees
+   the form and portal links.
+4. Chunks with [app/ingest/chunker.py](app/ingest/chunker.py): split at headings (FAQ
+   questions and procedures stay together where they fit), merge small sibling sections,
+   pack whole sentences into chunks of at most `CHUNK_TOKENS` (350) with 15 % overlap.
+   Every chunk carries the source metadata (`meta`: source ID, publisher, source
+   language, format, topic, geographic scope, access date, document date,
+   edition/period, source note, links) and the original URL.
+
+The older web crawler ([app/ingest/pipeline.py](app/ingest/pipeline.py): polite
+fetching, robots.txt, trafilatura/PyMuPDF extraction) is still available for a YAML list
+of URLs: `python scripts/ingest.py --urls my_sources.yaml`.
 
 ## Retrieval
 
 ```bash
 python scripts/build_index.py                                      # = make index
 python scripts/export_reranker.py                                  # once, = make reranker
-python scripts/search.py "Wie hoch ist der Semesterbeitrag?" --mode hybrid_rerank
+python scripts/search.py "How do I register my address?" --mode hybrid_rerank
 python scripts/search.py "Can I work as a student?" --mode all --k 3
 ```
 
@@ -160,24 +168,34 @@ against the PyTorch reranker.
 
 ```bash
 python scripts/ask.py "How do I register my address in Deggendorf?"
-python scripts/ask.py "Wie hoch ist der Semesterbeitrag?" "Can I work as a student?"
+python scripts/ask.py "Which DIT fees do I pay?" "Can I work as a student?"
 python scripts/ask.py --interactive            # models load once, then ask many questions
 ```
 
 `AnswerPipeline` ([app/generation/pipeline.py](app/generation/pipeline.py)) is built once
 (retriever models + LLM client) and answers each question:
 
-1. retrieves the top `TOP_K_FINAL` (5) chunks (`hybrid_rerank` by default, `--mode` to change);
-2. if the best reranker score is below `REFUSAL_THRESHOLD`, returns a fixed "I couldn't find
-   this in my sources" answer in the question's language **without calling the LLM**;
-3. otherwise sends the numbered passages to the LLM with the rules in
-   [app/generation/prompts.py](app/generation/prompts.py): answer only from the passages, in
-   the question's language, cite `[1]`, `[2]` after each claim, say so and name an office if
-   the answer is missing, at most 5 sentences;
-4. returns the answer, the citations actually used (number, title, url, snippet),
-   `refused`, the mode and timings in ms (retrieval, reranking, generation, total).
+1. greetings, thanks and goodbyes ("Hi! I am new here.") get a direct reply
+   ([app/generation/smalltalk.py](app/generation/smalltalk.py)) without retrieval;
+2. retrieves the top `TOP_K_FINAL` (5) chunks (`hybrid_rerank` by default, `--mode` to change);
+3. if the best reranker score is below `REFUSAL_THRESHOLD`, returns a fixed "I couldn't find
+   this in my sources" answer **without calling the LLM**;
+4. otherwise sends today's date and the numbered passages, each with its source metadata
+   (source ID, publisher, period/edition, document date, translation label, source note,
+   links), to the LLM with the rules in [app/generation/prompts.py](app/generation/prompts.py):
+   answer only from the passages and cite `[1]`, `[2]` after each claim; prefer the most
+   specific source; keep fees and dates attached to their semester; flag conflicts and
+   translated summaries; ask one short question when the answer depends on the semester,
+   degree vs. exchange status, citizenship/residence status, campus or job type; never
+   invent vacancies, appointments, premiums or legal decisions; answer in English unless
+   the user explicitly asks for another language;
+5. returns the answer, `response_type` (`answer`, `clarify`, `not_found`, `refused`,
+   `smalltalk`), the citations actually used (number, title, original url, snippet), the
+   cited sources grouped per document, the retrieved chunks, `refused`, the mode and
+   timings in ms (retrieval, reranking, generation, total).
 
-An answer that cites no passage is also marked `refused` (`refusal_reason: no_citations`).
+`refused` is true for the score threshold and when the LLM reports that the passages do
+not answer the question (`refusal_reason`: `low_score`, `no_hits`, `not_in_sources`).
 The threshold applies only to `hybrid_rerank`; other modes have no 0–1 score.
 
 The LLM client ([app/generation/llm_client.py](app/generation/llm_client.py)) works with

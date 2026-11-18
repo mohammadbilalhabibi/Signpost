@@ -219,6 +219,10 @@ function renderAnswer(box, result) {
     const banner = el("div", "refusal-banner");
     banner.append(el("span", null, "⚠"), el("span", null, text));
     box.append(banner);
+  } else if (result.response_type === "clarify") {
+    const banner = el("div", "clarify-banner");
+    banner.append(el("span", null, "?"), el("span", null, "One more detail would help"));
+    box.append(banner);
   }
 
   const sources = result.sources || [];
