@@ -11,7 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class Settings(BaseSettings):
-    """Typed configuration for Degbot. Env var names are the upper-case field names."""
+    """Typed configuration for Signpost. Env var names are the upper-case field names."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -114,7 +114,7 @@ class Settings(BaseSettings):
 
     # Ingestion
     ingest_user_agent: str = (
-        "DegbotIngest/0.1 (non-commercial student project; bilingual RAG assistant)"
+        "SignpostIngest/0.1 (non-commercial student project; bilingual RAG assistant)"
     )
     ingest_request_delay: float = Field(
         default=1.0, ge=1.0, description="Minimum seconds between requests to one host."

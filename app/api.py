@@ -34,7 +34,7 @@ from app.ratelimit import RateLimiter
 from app.retrieval.base import ChunkStore
 from app.retrieval.factory import Mode
 
-logger = logging.getLogger("degbot.api")
+logger = logging.getLogger("signpost.api")
 
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_QUESTION_CHARS = 500
@@ -200,7 +200,7 @@ def create_app(
         logger.info("models loaded in %.1f s", time.perf_counter() - start)
         yield
 
-    app = FastAPI(title="Degbot", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="Signpost", version="0.2.0", lifespan=lifespan)
 
     # ------------------------------------------------------------- helpers
 

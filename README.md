@@ -1,9 +1,11 @@
-# Degbot 2.0
+# Signpost
 
-A bilingual (German/English) question-answering assistant for international
-students at Deggendorf Institute of Technology (DIT) and in Bavaria: enrolment,
-Anmeldung, housing, health insurance, banking, exams. Every answer cites its
-sources; if the answer is not in the sources, Degbot says so.
+**AI-powered bilingual (German/English) assistant for international students.**
+
+Signpost answers questions of international students at Deggendorf Institute of
+Technology (DIT) and in Bavaria: enrolment, Anmeldung, housing, health insurance,
+banking, exams. Every answer cites its sources; if the answer is not in the sources,
+Signpost says so.
 
 > Status: ingestion, chunking, retrieval (BM25, dense, hybrid, reranked), answer
 > generation with citations and the web app are implemented. Evaluation is not

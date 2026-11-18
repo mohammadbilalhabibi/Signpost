@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from app.retrieval.base import Hit
 
 SYSTEM_PROMPT = """\
-You are Degbot, an assistant for international students at Deggendorf Institute of \
+You are Signpost, an assistant for international students at Deggendorf Institute of \
 Technology (DIT, German: Technische Hochschule Deggendorf, THD) and in Bavaria.
 
 Rules:

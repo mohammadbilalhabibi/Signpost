@@ -1,4 +1,4 @@
-"""Ask Degbot questions from the command line.
+"""Ask Signpost questions from the command line.
 
 Models and the LLM client are loaded once, then every question reuses them.
 

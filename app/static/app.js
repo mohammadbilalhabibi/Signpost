@@ -1,4 +1,4 @@
-// Degbot chat page: plain JavaScript, no framework, no build step.
+// Signpost chat page: plain JavaScript, no framework, no build step.
 // Model output is only ever inserted as text nodes (never innerHTML).
 "use strict";
 

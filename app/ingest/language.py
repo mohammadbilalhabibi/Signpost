@@ -1,4 +1,4 @@
-"""Language detection restricted to the two languages Degbot supports."""
+"""Language detection restricted to the two languages Signpost supports."""
 
 from __future__ import annotations
 
