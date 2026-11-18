@@ -13,6 +13,8 @@ from app.config import Settings
 from app.generation.llm_client import GenerationError, LLMClient, LLMResult
 from app.generation.pipeline import (
     AnswerPipeline,
+    Citation,
+    group_sources,
     make_snippet,
     parse_citations,
     question_language,
@@ -113,6 +115,29 @@ def test_only_cited_sources_are_returned_with_metadata() -> None:
     assert result.model == "fake-llm" and len(llm.calls) == 1
 
 
+def test_passages_of_one_document_become_one_source() -> None:
+    hits = [make_hit(1), make_hit(2), Hit(**{**make_hit(1).__dict__, "chunk_id": "doc1-0001"})]
+    retriever = RerankedRetriever(StaticRetriever(hits), FixedScores([0.9, 0.8, 0.7]))
+    llm = FakeLLM("Register within two weeks [1]. Bring a passport [3]. Fees differ [2].")
+    result = AnswerPipeline(retriever, llm, settings()).answer("How do I register?")
+
+    assert [c.number for c in result.citations] == [1, 2, 3]  # per passage, unchanged
+    assert [(s.numbers, s.doc_id) for s in result.sources] == [((1, 3), "doc1"), ((2,), "doc2")]
+    first = result.sources[0]
+    assert (first.title, first.url, first.language) == ("Source 1", "https://example.org/1", "en")
+    assert first.snippet.startswith("Body text of source number 1")
+    assert result.to_dict()["sources"][0]["numbers"] == (1, 3)
+
+
+def test_group_sources_orders_by_first_citation_number() -> None:
+    def cite(number: int, doc: str) -> Citation:
+        return Citation(number, f"T{doc}", f"https://x/{doc}", "s", doc, "de")
+
+    sources = group_sources([cite(4, "b"), cite(2, "a"), cite(1, "b"), cite(5, "a")])
+    assert [(s.doc_id, s.numbers) for s in sources] == [("b", (1, 4)), ("a", (2, 5))]
+    assert group_sources([]) == []
+
+
 def test_numbers_beyond_the_passages_are_dropped() -> None:
     llm = FakeLLM("Only five passages exist [1] [6].")
     result = reranked_pipeline(FIVE_SCORES, llm).answer("Question?")
@@ -144,7 +169,7 @@ def test_low_score_refuses_without_calling_the_llm() -> None:
     assert result.refused is True
     assert result.refusal_reason == "low_score"
     assert result.answer == REFUSAL_TEXT["en"]
-    assert result.citations == []
+    assert result.citations == [] and result.sources == []
     assert llm.calls == []
     assert result.timings_ms["generation"] is None
     assert result.best_score == pytest.approx(0.05)

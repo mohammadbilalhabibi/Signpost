@@ -69,7 +69,7 @@ function expandNumbers(group) {
   return numbers;
 }
 
-function appendInline(parent, text, msgId, citedNumbers) {
+function appendInline(parent, text, msgId, citedNumbers, sourceIndex) {
   let last = 0;
   for (const match of text.matchAll(CITATION_OR_BOLD)) {
     parent.append(text.slice(last, match.index));
@@ -79,7 +79,7 @@ function appendInline(parent, text, msgId, citedNumbers) {
       for (const n of expandNumbers(match[2])) {
         if (citedNumbers.has(n)) {
           const link = el("a", "cite", String(n));
-          link.href = `#src-${msgId}-${n}`;
+          link.href = `#src-${msgId}-${sourceIndex.get(n) ?? 0}`;
           link.setAttribute("aria-label", `Source ${n}`);
           link.addEventListener("click", (event) => {
             event.preventDefault();
@@ -96,7 +96,7 @@ function appendInline(parent, text, msgId, citedNumbers) {
   parent.append(text.slice(last));
 }
 
-function renderAnswerText(text, msgId, citedNumbers) {
+function renderAnswerText(text, msgId, citedNumbers, sourceIndex) {
   const container = el("div", "answer");
   let list = null;
   let paragraph = null;
@@ -109,7 +109,7 @@ function renderAnswerText(text, msgId, citedNumbers) {
         container.append(list);
       }
       const li = el("li");
-      appendInline(li, item[1], msgId, citedNumbers);
+      appendInline(li, item[1], msgId, citedNumbers, sourceIndex);
       list.append(li);
     } else if (line.trim() === "") {
       list = null;
@@ -121,14 +121,14 @@ function renderAnswerText(text, msgId, citedNumbers) {
         paragraph = el("p");
         container.append(paragraph);
       }
-      appendInline(paragraph, line, msgId, citedNumbers);
+      appendInline(paragraph, line, msgId, citedNumbers, sourceIndex);
     }
   }
   return container;
 }
 
 function highlightSource(msgId, n) {
-  const card = document.getElementById(`src-${msgId}-${n}`);
+  const card = document.querySelector(`[data-source-of~="${msgId}-${n}"]`);
   if (!card) return;
   card.scrollIntoView({ behavior: "smooth", block: "nearest" });
   card.classList.add("highlight");
@@ -159,19 +159,21 @@ function addLoading() {
   return { box, stop: () => clearInterval(timer) };
 }
 
-function sourceCard(citation, msgId) {
+// One card per cited document, listing all its citation numbers, e.g. "[1][3]".
+function sourceCard(source, msgId, index) {
   const card = el("article", "source-card");
-  card.id = `src-${msgId}-${citation.number}`;
+  card.id = `src-${msgId}-${index}`;
+  card.dataset.sourceOf = source.numbers.map((n) => `${msgId}-${n}`).join(" ");
   const head = el("div", "source-head");
-  head.append(el("span", "source-num", `[${citation.number}]`));
-  head.append(el("span", "lang-tag", (citation.language || "?").toUpperCase()));
+  head.append(el("span", "source-num", source.numbers.map((n) => `[${n}]`).join("")));
+  head.append(el("span", "lang-tag", (source.language || "?").toUpperCase()));
   card.append(head);
-  card.append(el("div", "source-title", citation.title));
-  const link = el("a", "source-link", new URL(citation.url).hostname.replace(/^www\./, ""));
-  link.href = citation.url;
+  card.append(el("div", "source-title", source.title));
+  const link = el("a", "source-link", new URL(source.url).hostname.replace(/^www\./, ""));
+  link.href = source.url;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
-  link.title = citation.url;
+  link.title = source.url;
   card.append(link);
   return card;
 }
@@ -219,13 +221,16 @@ function renderAnswer(box, result) {
     box.append(banner);
   }
 
-  const cited = new Set(result.citations.map((c) => c.number));
-  box.append(renderAnswerText(result.answer, msgId, cited));
+  const sources = result.sources || [];
+  const cited = new Set(sources.flatMap((s) => s.numbers));
+  const sourceIndex = new Map(); // citation number -> index of its document card
+  sources.forEach((s, i) => s.numbers.forEach((n) => sourceIndex.set(n, i)));
+  box.append(renderAnswerText(result.answer, msgId, cited, sourceIndex));
 
-  if (result.citations.length) {
-    const sources = el("div", "sources");
-    result.citations.forEach((c) => sources.append(sourceCard(c, msgId)));
-    box.append(sources);
+  if (sources.length) {
+    const cards = el("div", "sources");
+    sources.forEach((s, i) => cards.append(sourceCard(s, msgId, i)));
+    box.append(cards);
   }
 
   const meta = el("div", "meta");

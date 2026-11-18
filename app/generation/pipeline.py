@@ -51,6 +51,18 @@ class Citation:
     language: str
 
 
+@dataclass(frozen=True)
+class Source:
+    """One cited document with every passage number the answer cites from it."""
+
+    numbers: tuple[int, ...]
+    doc_id: str
+    title: str
+    url: str
+    language: str
+    snippet: str  # from the first cited passage of this document
+
+
 @dataclass
 class Answer:
     """Result of one question."""
@@ -65,6 +77,7 @@ class Answer:
     timings_ms: dict[str, float | None] = field(default_factory=dict)
     refusal_reason: str | None = None  # "no_hits" | "low_score" | "no_citations"
     model: str | None = None
+    sources: list[Source] = field(default_factory=list)  # citations grouped by document
 
     def to_dict(self) -> dict:
         """JSON-serialisable representation (for the API)."""
@@ -101,6 +114,24 @@ def parse_citations(text: str, n_passages: int) -> list[int]:
                 continue
             found.update(range(low, high + 1))
     return sorted(i for i in found if 1 <= i <= n_passages)
+
+
+def group_sources(citations: list[Citation]) -> list[Source]:
+    """One Source per document, ordered by its first citation number."""
+    by_doc: dict[str, list[Citation]] = {}
+    for citation in sorted(citations, key=lambda c: c.number):
+        by_doc.setdefault(citation.doc_id, []).append(citation)
+    return [
+        Source(
+            numbers=tuple(c.number for c in group),
+            doc_id=group[0].doc_id,
+            title=group[0].title,
+            url=group[0].url,
+            language=group[0].language,
+            snippet=group[0].snippet,
+        )
+        for group in by_doc.values()
+    ]
 
 
 def make_snippet(hit: Hit, max_chars: int = SNIPPET_CHARS) -> str:
@@ -210,6 +241,7 @@ class AnswerPipeline:
             timings_ms=timings,
             refusal_reason=None if citations else "no_citations",
             model=result.model,
+            sources=group_sources(citations),
         )
 
 

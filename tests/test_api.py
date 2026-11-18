@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.api import Services, create_app, list_sources
 from app.config import Settings
 from app.generation.llm_client import GenerationError
-from app.generation.pipeline import Answer, Citation
+from app.generation.pipeline import Answer, Citation, group_sources
 from app.retrieval.base import ChunkStore
 from tests.test_retrieval import CORPUS
 
@@ -35,12 +35,18 @@ class FakePipeline:
         citations = (
             []
             if refused
-            else [Citation(1, "THD – Gebühren", "https://example.org/fees-0000", "Der …",
-                           "fees", "de")]
+            else [
+                Citation(1, "THD – Gebühren", "https://example.org/fees-0000", "Der …",
+                         "fees", "de"),
+                Citation(2, "Health insurance", "https://example.org/ins", "All …",
+                         "insurance", "en"),
+                Citation(3, "THD – Gebühren", "https://example.org/fees-0000", "Die …",
+                         "fees", "de"),
+            ]
         )  # fmt: skip
         return Answer(
             question=question,
-            answer="Not in my sources." if refused else "82 Euro [1].",
+            answer="Not in my sources." if refused else "82 Euro [1][3]. Insured [2].",
             citations=citations,
             refused=refused,
             mode=self.mode,
@@ -50,6 +56,7 @@ class FakePipeline:
                         else 30.0, "total": 60.0},
             refusal_reason="low_score" if refused else None,
             model=None if refused else "fake-llm",
+            sources=group_sources(citations),
         )  # fmt: skip
 
 
@@ -137,17 +144,34 @@ def test_ask_returns_pipeline_result_with_question_id(client: TestClient) -> Non
     assert response.status_code == 200
     body = response.json()
     assert len(body["question_id"]) == 32
-    assert body["answer"] == "82 Euro [1]."
+    assert body["answer"] == "82 Euro [1][3]. Insured [2]."
     assert body["question"] == "Wie hoch ist der Semesterbeitrag?"  # stripped
-    assert body["citations"] == [
+    assert body["citations"][0] == {
+        "number": 1,
+        "title": "THD – Gebühren",
+        "url": "https://example.org/fees-0000",
+        "snippet": "Der …",
+        "doc_id": "fees",
+        "language": "de",
+    }
+    # one source card per document, carrying all its citation numbers
+    assert body["sources"] == [
         {
-            "number": 1,
+            "numbers": [1, 3],
+            "doc_id": "fees",
             "title": "THD – Gebühren",
             "url": "https://example.org/fees-0000",
-            "snippet": "Der …",
-            "doc_id": "fees",
             "language": "de",
-        }
+            "snippet": "Der …",
+        },
+        {
+            "numbers": [2],
+            "doc_id": "insurance",
+            "title": "Health insurance",
+            "url": "https://example.org/ins",
+            "language": "en",
+            "snippet": "All …",
+        },
     ]
     assert body["refused"] is False
     assert body["timings_ms"]["total"] == 60.0
@@ -162,7 +186,7 @@ def test_ask_logs_every_question(client: TestClient, tmp_path: Path) -> None:
     answered, refused = records
     assert answered["id"] == first["question_id"]
     assert answered["question"] == "Semesterbeitrag?"
-    assert answered["cited_doc_ids"] == ["fees"]
+    assert answered["cited_doc_ids"] == ["fees", "insurance"]
     assert answered["refused"] is False and answered["refusal_reason"] is None
     assert answered["best_score"] == 0.9 and answered["language"] == "en"
     assert answered["timings_ms"]["generation"] == 30.0

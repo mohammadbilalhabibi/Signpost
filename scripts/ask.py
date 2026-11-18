@@ -23,10 +23,11 @@ from app.retrieval.factory import MODES
 def format_answer(result: Answer) -> str:
     """Human-readable answer with citations, refusal flag, best score and timings."""
     lines = [result.answer, ""]
-    if result.citations:
+    if result.sources:
         lines.append("Sources:")
-        for c in result.citations:
-            lines += [f"  [{c.number}] {c.title} – {c.url}", f"      {c.snippet}"]
+        for s in result.sources:
+            numbers = "".join(f"[{n}]" for n in s.numbers)
+            lines += [f"  {numbers} {s.title} – {s.url}", f"      {s.snippet}"]
     else:
         lines.append("Sources: none")
     best = "-" if result.best_score is None else f"{result.best_score:.3f}"
