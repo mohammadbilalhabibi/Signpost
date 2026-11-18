@@ -25,6 +25,27 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     llm_api_key: SecretStr = SecretStr("")
+    llm_api_version: str = Field(
+        default="2024-10-21", description="Azure OpenAI only: the REST API version."
+    )
+    llm_timeout: float = Field(default=30.0, gt=0, description="Seconds per LLM request.")
+    llm_max_retries: int = Field(
+        default=1, ge=0, description="Retries on timeouts, connection errors, 429 and 5xx."
+    )
+    llm_max_output_tokens: int = Field(default=600, ge=16, description="Answer length limit.")
+    llm_temperature: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature; unset = provider default (some models reject it).",
+    )
+    llm_token_param: Literal["auto", "max_tokens", "max_completion_tokens"] = Field(
+        default="auto",
+        description=(
+            "Name of the output-limit parameter. auto: max_completion_tokens for openai/azure, "
+            "max_tokens for other providers."
+        ),
+    )
 
     # Models
     embedding_model: str = "intfloat/multilingual-e5-base"
@@ -53,12 +74,14 @@ class Settings(BaseSettings):
     top_k_final: int = Field(default=5, ge=1, description="Passages passed to the LLM.")
     rrf_k: int = Field(default=60, ge=1, description="Reciprocal Rank Fusion constant.")
     refusal_threshold: float = Field(
-        default=0.3,
+        default=0.1,
         ge=0.0,
         le=1.0,
         description=(
             "Minimum reranker score (0-1) of the best passage; below it the assistant "
-            "refuses. Placeholder value, to be tuned on the evaluation set."
+            "refuses without calling the LLM. Provisional: chosen between an off-topic "
+            "question (0.0003) and the lowest answerable one (0.23) with the int8 reranker; "
+            "to be tuned on the evaluation set."
         ),
     )
 

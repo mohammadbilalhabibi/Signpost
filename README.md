@@ -5,8 +5,9 @@ students at Deggendorf Institute of Technology (DIT) and in Bavaria: enrolment,
 Anmeldung, housing, health insurance, banking, exams. Every answer cites its
 sources; if the answer is not in the sources, Degbot says so.
 
-> Status: ingestion, chunking and retrieval (BM25, dense, hybrid, reranked) are
-> implemented. Generation and evaluation are not implemented yet.
+> Status: ingestion, chunking, retrieval (BM25, dense, hybrid, reranked) and answer
+> generation with citations are implemented. The API endpoint and evaluation are not
+> implemented yet.
 
 ## Stack
 
@@ -141,6 +142,37 @@ startup. A smaller cloud CPU (e.g. a free Hugging Face Space) will be slower.
 Tests: `pytest` runs fast tests with small fake models; `pytest -m slow` also runs the
 same corpus through the real e5 and reranker models and checks the int8 ONNX export
 against the PyTorch reranker.
+
+## Answering
+
+```bash
+python scripts/ask.py "How do I register my address in Deggendorf?"
+python scripts/ask.py "Wie hoch ist der Semesterbeitrag?" "Can I work as a student?"
+python scripts/ask.py --interactive            # models load once, then ask many questions
+```
+
+`AnswerPipeline` ([app/generation/pipeline.py](app/generation/pipeline.py)) is built once
+(retriever models + LLM client) and answers each question:
+
+1. retrieves the top `TOP_K_FINAL` (5) chunks (`hybrid_rerank` by default, `--mode` to change);
+2. if the best reranker score is below `REFUSAL_THRESHOLD`, returns a fixed "I couldn't find
+   this in my sources" answer in the question's language **without calling the LLM**;
+3. otherwise sends the numbered passages to the LLM with the rules in
+   [app/generation/prompts.py](app/generation/prompts.py): answer only from the passages, in
+   the question's language, cite `[1]`, `[2]` after each claim, say so and name an office if
+   the answer is missing, at most 5 sentences;
+4. returns the answer, the citations actually used (number, title, url, snippet),
+   `refused`, the mode and timings in ms (retrieval, reranking, generation, total).
+
+An answer that cites no passage is also marked `refused` (`refusal_reason: no_citations`).
+The threshold applies only to `hybrid_rerank`; other modes have no 0–1 score.
+
+The LLM client ([app/generation/llm_client.py](app/generation/llm_client.py)) works with
+any OpenAI-compatible API; set `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`
+(examples for OpenAI, Azure OpenAI, Mistral and Ollama in [.env.example](.env.example)).
+Requests time out after `LLM_TIMEOUT` seconds and are retried once. Newer OpenAI models
+reject `max_tokens`, so `LLM_TOKEN_PARAM=auto` sends `max_completion_tokens` for
+openai/azure and `max_tokens` elsewhere.
 
 ## Layout
 

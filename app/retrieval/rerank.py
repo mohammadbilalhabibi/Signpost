@@ -47,8 +47,11 @@ class RerankedRetriever(Retriever):
         """Rerank ``max(candidates, k)`` inner hits and return the best ``k``."""
         if k <= 0:
             return []
-        hits = self.inner.search(query, max(self.candidates, k))
-        if not hits:
+        return self.rerank(query, self.inner.search(query, max(self.candidates, k)), k)
+
+    def rerank(self, query: str, hits: list[Hit], k: int) -> list[Hit]:
+        """Score ``hits`` with the cross-encoder and return the best ``k`` (score 0-1)."""
+        if k <= 0 or not hits:
             return []
         raw = self.cross_encoder.predict(
             [(query, h.text) for h in hits], batch_size=self.batch_size, show_progress_bar=False
