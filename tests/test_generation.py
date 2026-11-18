@@ -383,7 +383,7 @@ def test_openai_provider_uses_max_completion_tokens() -> None:
     client = LLMClient(settings(llm_provider="openai", llm_api_key="sk-test"))
     assert isinstance(client.client, openai.OpenAI)
     kwargs = client.request_kwargs("sys", "user")
-    assert kwargs["max_completion_tokens"] == 600
+    assert kwargs["max_completion_tokens"] == 2000
     assert "max_tokens" not in kwargs and "temperature" not in kwargs
     assert client.client.timeout == 30.0 and client.client.max_retries == 1
 
@@ -413,7 +413,7 @@ def test_token_param_and_temperature_can_be_overridden() -> None:
                  llm_temperature=0.2)
     )  # fmt: skip
     kwargs = client.request_kwargs("sys", "user")
-    assert kwargs["max_completion_tokens"] == 600 and kwargs["temperature"] == 0.2
+    assert kwargs["max_completion_tokens"] == 2000 and kwargs["temperature"] == 0.2
 
 
 def test_missing_key_gets_a_placeholder_for_ollama() -> None:

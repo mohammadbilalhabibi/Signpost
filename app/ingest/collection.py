@@ -182,6 +182,23 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def document_context(source: CollectionSource) -> str:
+    """One context line added to every chunk header of this source (indexed and reranked).
+
+    Many sections never name the publisher or place (a residence page's "Address"
+    section says nothing about "Studierendenwerk" or "Deggendorf"), so a question like
+    "Which Studierendenwerk residences are in Deggendorf?" could not find them.
+    """
+    parts = []
+    if source.meta.get("publisher"):
+        parts.append(f"Source: {source.meta['publisher']}")
+    if source.meta.get("geographic_scope"):
+        parts.append(f"Scope: {source.meta['geographic_scope']}")
+    if source.meta.get("edition_or_period"):
+        parts.append(f"Period: {source.meta['edition_or_period']}")
+    return " | ".join(parts)
+
+
 def load_document(source: CollectionSource, collection_dir: Path) -> dict[str, Any]:
     """Build the document record for one source from its text copy, else its PDF."""
     if source.text_path and _resolve(collection_dir, source.text_path).exists():
@@ -216,6 +233,7 @@ def load_document(source: CollectionSource, collection_dir: Path) -> dict[str, A
         "representation": representation,
         "path": path.relative_to(collection_dir).as_posix(),
         "meta": {"source_id": source.id, **source.meta},
+        "context": document_context(source),
         "links": links,
         "text": body,
     }

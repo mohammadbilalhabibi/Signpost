@@ -205,6 +205,43 @@ Requests time out after `LLM_TIMEOUT` seconds and are retried once. Newer OpenAI
 reject `max_tokens`, so `LLM_TOKEN_PARAM=auto` sends `max_completion_tokens` for
 openai/azure and `max_tokens` elsewhere.
 
+## Evaluation
+
+```bash
+python eval/run_eval.py --retrieval-only   # retrieval metrics, no LLM calls (~7 min on CPU)
+python eval/run_eval.py                    # full answers (40 LLM calls, ~8 min)
+```
+
+[eval/run_eval.py](eval/run_eval.py) runs the 40 acceptance questions in the collection's
+`evaluation_questions.json` (not part of the corpus) and writes `eval/results/<run>.jsonl`
+(answers, retrieved and cited sources, timings) and `<run>.md` (metrics table). Retrieval and
+citation metrics are automatic; factual support and whether a clarification or abstention was
+appropriate were reviewed by hand against each question's rubric and the source texts
+(`eval/results/run*-review.md`).
+
+Results on 19 November 2026 (hybrid_rerank, int8 ONNX reranker, 20 candidates, 256 tokens,
+`gpt-6-luna`):
+
+| Run | Change | Expected source in top 5 | Cites an expected source | Citation precision | Manual review (pass / partial / fail) |
+|---|---|---|---|---|---|
+| run1 | new collection | 37/38 | 36/38 | 0.88 | 28 / 10 / 2 |
+| run2 | publisher/scope context in chunk headers; prompt: conditions, contacts, general vs specific rules | 38/38 | 38/38 | 0.93 | 31 / 8 / 1 |
+| run3 | prompt: address registration vs residence permit kept apart | 38/38 | 38/38 | 0.91 | 31 / 9 / 0 |
+
+(38 of the 40 questions have expected sources; the greeting and the live-vacancy question
+have none.) The manual review is a single reviewer's judgement, and the LLM is not
+deterministic: grades of individual questions can change between runs.
+
+Known limitations:
+- The reranker gives near-zero scores both to off-topic questions and to on-topic questions
+  that the sources cannot answer (e.g. "Which dorm has an empty room today?", 0.0004), so the
+  latter get the generic refusal instead of a pointer to the housing portal.
+- Some answers leave out a detail the rubric expects (e.g. the previous tenant's right to the
+  room, the validation terminal), and multi-source questions sometimes miss one source
+  (Q13 without D04, Q29 without D30).
+- The collection is a snapshot (captured 18 November 2026): fees, deadlines, contacts and
+  visa rules must be refreshed before a new semester.
+
 ## Web app
 
 Start the server (Windows, from the project folder), then open http://127.0.0.1:7860:

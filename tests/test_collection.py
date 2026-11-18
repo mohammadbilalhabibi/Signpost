@@ -197,3 +197,23 @@ def test_link_lines_move_to_metadata_and_attach_to_their_chunk(tmp_path: Path) -
     report = ingest_collection(root, tmp_path / "out", chunker())
     urls = {link["url"] for c in report.chunks for link in c.meta.get("links", [])}
     assert "https://example.org/form.pdf" in urls
+
+
+def test_chunk_headers_carry_publisher_scope_and_period(tmp_path: Path) -> None:
+    root = tmp_path / "c"
+    write_text(root, "D14", f"## Address\n\nBahnhofstraße 55-55a, D-94469 Deggendorf. {ENGLISH}\n")
+    make_collection(
+        root,
+        [
+            entry(
+                "D14",
+                publisher="Studierendenwerk Niederbayern/Oberpfalz",
+                edition_or_period="Summer semester 2027",
+            )
+        ],
+    )
+    report = ingest_collection(root, tmp_path / "out", chunker())
+    assert report.chunks[0].text.startswith(
+        "Title D14 > Address\nSource: Studierendenwerk Niederbayern/Oberpfalz | "
+        "Scope: Deggendorf | Period: Summer semester 2027\n\nBahnhofstraße"
+    )

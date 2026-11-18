@@ -266,8 +266,11 @@ class Chunker:
         title = (doc.get("title") or "").strip()
         chunks: list[Chunk] = []
         sections = self.merge_small_sections(split_sections(doc.get("text", ""), title), title)
+        context = (doc.get("context") or "").strip()
         for section in sections:
             header = _header(title, section.heading)
+            if context and header:  # e.g. "Source: Studierendenwerk ... | Scope: Deggendorf"
+                header = header[:-1] + context + "\n\n"
             budget = self._body_budget(header)
             for body in self._chunk_section(section, budget):
                 text = header + body

@@ -32,7 +32,14 @@ class Settings(BaseSettings):
     llm_max_retries: int = Field(
         default=1, ge=0, description="Retries on timeouts, connection errors, 429 and 5xx."
     )
-    llm_max_output_tokens: int = Field(default=600, ge=16, description="Answer length limit.")
+    llm_max_output_tokens: int = Field(
+        default=2000,
+        ge=16,
+        description=(
+            "Output token limit. Reasoning models count their hidden reasoning tokens too; "
+            "600 was too low (empty replies with finish_reason=length)."
+        ),
+    )
     llm_temperature: float | None = Field(
         default=None,
         ge=0.0,
