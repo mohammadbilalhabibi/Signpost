@@ -38,29 +38,34 @@ def load_embedding_model(model_name: str) -> Encoder:
 
 
 @lru_cache(maxsize=2)
-def load_reranker(model_name: str) -> CrossEncoderLike:
+def load_reranker(model_name: str, max_length: int = 512) -> CrossEncoderLike:
     """Load the cross-encoder reranker (once per process)."""
     from sentence_transformers import CrossEncoder
 
     logger.info("loading reranker %s", model_name)
-    return CrossEncoder(model_name, max_length=512)
+    return CrossEncoder(model_name, max_length=max_length)
 
 
 @lru_cache(maxsize=2)
 def load_onnx_reranker(
-    model_dir: Path, source_model: str | None = None, threads: int = 0
+    model_dir: Path, source_model: str | None = None, threads: int = 0, max_length: int = 512
 ) -> OnnxCrossEncoder:
     """Load the int8 ONNX reranker exported by scripts/export_reranker.py (once per process)."""
-    return OnnxCrossEncoder.from_dir(model_dir, expected_model=source_model, threads=threads)
+    return OnnxCrossEncoder.from_dir(
+        model_dir, expected_model=source_model, threads=threads, max_length=max_length
+    )
 
 
 def reranker_from_settings(settings: Settings) -> CrossEncoderLike:
     """Return the reranker selected by RERANKER_BACKEND (onnx or torch)."""
     if settings.reranker_backend == "onnx":
         return load_onnx_reranker(
-            Path(settings.reranker_onnx_dir), settings.reranker_model, settings.reranker_threads
+            Path(settings.reranker_onnx_dir),
+            settings.reranker_model,
+            settings.reranker_threads,
+            settings.rerank_max_length,
         )
-    return load_reranker(settings.reranker_model)
+    return load_reranker(settings.reranker_model, settings.rerank_max_length)
 
 
 # ------------------------------------------------------------------ index building
@@ -153,5 +158,5 @@ def _make_retriever(mode: str, settings: Settings) -> Retriever:
     if mode == "hybrid":
         return hybrid
     return RerankedRetriever(
-        hybrid, reranker_from_settings(settings), candidates=settings.top_k_rerank
+        hybrid, reranker_from_settings(settings), candidates=settings.rerank_candidates
     )

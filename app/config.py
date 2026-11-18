@@ -68,8 +68,16 @@ class Settings(BaseSettings):
 
     # Retrieval
     top_k_retrieve: int = Field(default=20, ge=1, description="Candidates per retriever.")
-    top_k_rerank: int = Field(
-        default=10, ge=1, description="Hybrid candidates scored by the reranker."
+    rerank_candidates: int = Field(
+        default=10,
+        ge=1,
+        description="Hybrid candidates scored by the reranker (main latency knob).",
+    )
+    rerank_max_length: int = Field(
+        default=512,
+        ge=32,
+        le=8192,
+        description="Max tokens per (question, passage) pair fed to the reranker.",
     )
     top_k_final: int = Field(default=5, ge=1, description="Passages passed to the LLM.")
     rrf_k: int = Field(default=60, ge=1, description="Reciprocal Rank Fusion constant.")

@@ -105,7 +105,7 @@ once per process.
 | `bm25`          | rank_bm25; lowercase, letters + digits (umlauts, ß kept), DE+EN stopwords | BM25             |
 | `dense`         | multilingual-e5-base (`passage: ` / `query: `), normalised, FAISS IndexFlatIP | cosine           |
 | `hybrid`        | top `TOP_K_RETRIEVE` (20) of dense and BM25, Reciprocal Rank Fusion (`RRF_K`=60) | RRF              |
-| `hybrid_rerank` | hybrid's top `TOP_K_RERANK` (10) reranked by bge-reranker-v2-m3; returns `k` results | reranker, 0–1    |
+| `hybrid_rerank` | hybrid's top `RERANK_CANDIDATES` (10) reranked by bge-reranker-v2-m3; returns `k` results | reranker, 0–1    |
 
 `index/` holds `bm25.pkl`, `dense.faiss`, `dense_ids.json` (row -> chunk_id) and
 `meta.json` (a fingerprint of chunks.jsonl). If the chunks change, loading fails with a
@@ -138,6 +138,18 @@ and both picked the same best chunk for all 10 questions. Cutting to 10 candidat
 more: the top result matched the previous setup in 7 of 10 queries. Whether that costs
 answer quality is still to be measured on the evaluation set. Model load takes ~25 s at
 startup. A smaller cloud CPU (e.g. a free Hugging Face Space) will be slower.
+
+Two settings trade reranking speed against thoroughness (defaults to be chosen in the
+evaluation phase): `RERANK_CANDIDATES` (default 10) and `RERANK_MAX_LENGTH` (default 512
+tokens per question + chunk pair; chunks are ≤ 350 tokens, so 512 never truncates, while
+256 truncated 60 of 100 pairs). Reranking time only, int8 ONNX, 5 questions in one process:
+
+| Candidates | Max length | Median reranking | Same top-1 as 20/512 | Top-5 overlap with 20/512 |
+|------------|------------|------------------|----------------------|---------------------------|
+| 20         | 512        | 16.2 s           | –                    | –                         |
+| 20         | 256        | 9.1 s            | 5/5                  | 76%                       |
+| 10 (default) | 512 (default) | 7.1 s      | 4/5                  | 60%                       |
+| 10         | 256        | 4.3 s            | 3/5                  | 56%                       |
 
 Tests: `pytest` runs fast tests with small fake models; `pytest -m slow` also runs the
 same corpus through the real e5 and reranker models and checks the int8 ONNX export

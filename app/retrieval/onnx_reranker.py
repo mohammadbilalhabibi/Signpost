@@ -46,12 +46,17 @@ class OnnxCrossEncoder:
 
     @classmethod
     def from_dir(
-        cls, model_dir: Path, expected_model: str | None = None, threads: int = 0
+        cls,
+        model_dir: Path,
+        expected_model: str | None = None,
+        threads: int = 0,
+        max_length: int = 512,
     ) -> OnnxCrossEncoder:
         """Load ``model_dir`` written by ``scripts/export_reranker.py``.
 
         ``expected_model`` (the Hugging Face id from RERANKER_MODEL) must match the model the
-        export was made from; ``threads`` = 0 lets ONNX Runtime choose.
+        export was made from; ``threads`` = 0 lets ONNX Runtime choose; ``max_length`` is the
+        token limit per (query, passage) pair.
         """
         model_dir = Path(model_dir)
         model_path = model_dir / MODEL_FILE
@@ -80,7 +85,7 @@ class OnnxCrossEncoder:
             options.intra_op_num_threads = threads
         logger.info("loading ONNX reranker %s", model_path)
         session = ort.InferenceSession(str(model_path), options, providers=["CPUExecutionProvider"])
-        return cls(session, AutoTokenizer.from_pretrained(model_dir))
+        return cls(session, AutoTokenizer.from_pretrained(model_dir), max_length=max_length)
 
     def predict(
         self, sentences: list[tuple[str, str]], batch_size: int = 16, **kwargs: Any

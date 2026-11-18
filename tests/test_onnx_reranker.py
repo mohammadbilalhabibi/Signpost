@@ -119,7 +119,8 @@ def test_export_of_another_model_is_rejected(tmp_path: Path) -> None:
 def test_reranker_settings_defaults_and_path_resolution() -> None:
     settings = Settings(_env_file=None)
     assert settings.reranker_backend == "onnx"
-    assert settings.top_k_rerank == 10
+    assert settings.rerank_candidates == 10
+    assert settings.rerank_max_length == 512
     relative = Settings(_env_file=None, reranker_onnx_dir="models/custom")
     assert relative.reranker_onnx_dir == PROJECT_ROOT / "models" / "custom"
 
@@ -136,13 +137,30 @@ def test_backend_setting_selects_loader(
     calls: list[tuple] = []
     monkeypatch.setattr(factory, "load_reranker", lambda *a: calls.append(("torch", *a)))
     monkeypatch.setattr(factory, "load_onnx_reranker", lambda *a: calls.append(("onnx", *a)))
-    settings = Settings(_env_file=None, reranker_backend=backend, reranker_threads=3)
+    settings = Settings(
+        _env_file=None, reranker_backend=backend, reranker_threads=3, rerank_max_length=256
+    )
 
     factory.reranker_from_settings(settings)
 
     assert calls[0][0] == expected
     if expected == "onnx":
-        assert calls[0][1:] == (settings.reranker_onnx_dir, settings.reranker_model, 3)
+        assert calls[0][1:] == (settings.reranker_onnx_dir, settings.reranker_model, 3, 256)
+    else:
+        assert calls[0][1:] == (settings.reranker_model, 256)
+
+
+def test_max_length_reaches_the_tokenizer() -> None:
+    seen: list[dict] = []
+
+    class RecordingTokenizer(FakeTokenizer):
+        def __call__(self, queries, passages, **kwargs):
+            seen.append(kwargs)
+            return super().__call__(queries, passages, **kwargs)
+
+    encoder = OnnxCrossEncoder(FakeSession(), RecordingTokenizer(), max_length=256)
+    encoder.predict([("q", "p")])
+    assert seen[0]["max_length"] == 256 and seen[0]["truncation"] is True
 
 
 # ------------------------------------------------------------- real model (slow)
