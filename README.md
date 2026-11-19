@@ -1,5 +1,8 @@
 # Signpost
 
+[![CI](https://github.com/mohammadbilalhabibi/Signpost/actions/workflows/ci.yml/badge.svg)](https://github.com/mohammadbilalhabibi/Signpost/actions/workflows/ci.yml)
+[![Docker](https://github.com/mohammadbilalhabibi/Signpost/actions/workflows/docker.yml/badge.svg)](https://github.com/mohammadbilalhabibi/Signpost/actions/workflows/docker.yml)
+
 **AI-powered assistant for international students arriving at DIT, with cited answers
 from official sources.**
 
@@ -15,8 +18,9 @@ generation over a curated, cited source collection.
 > Status: ingestion, hybrid retrieval with reranking, cited answer generation and the web
 > app work end to end on the English DIT arrival collection, and are evaluated on its 40
 > acceptance questions (latest run: expected source cited for 38/38; manual review 31 pass /
-> 9 partial / 0 fail, see [Evaluation](#evaluation)). Next: Docker deployment on Hugging Face
-> Spaces.
+> 9 partial / 0 fail, see [Evaluation](#evaluation)). A Docker image and CI are ready; there
+> is no public deployment yet, because Hugging Face Docker Spaces need a paid PRO plan
+> (see [Docker and deployment](#docker-and-deployment)).
 
 ## Stack
 
@@ -288,9 +292,84 @@ models again.
   `FEEDBACK_RATE_LIMIT_PER_MINUTE` (30) feedback requests; over the limit → 429 with
   `Retry-After`. Behind a trusted proxy (e.g. Hugging Face Spaces) set
   `TRUST_FORWARDED_FOR=true` so the real client IP is used.
+- Daily budget for all users together: `DAILY_QUESTION_LIMIT` (200) questions answered by
+  the LLM per UTC day (greetings and below-threshold refusals do not count; LLM errors give
+  the slot back). When it is used up, `/api/ask` returns 429 `daily_limit_reached` with a
+  friendly message and `Retry-After` until 00:00 UTC. The count is kept in memory, so a
+  restart also resets it; `/api/health` shows `questions_today`. 0 = no limit.
 - Every question is logged to `logs/queries.jsonl` (id, timestamp, question, language,
   refused, refusal reason, best score, cited doc_ids, timings) and feedback to
   `logs/feedback.jsonl`. No IP addresses are logged. `logs/` is git-ignored.
+
+## Docker and deployment
+
+> **Hugging Face Spaces need a PRO plan.** As of November 2026, Docker Spaces require a paid
+> Hugging Face PRO subscription, so Signpost is not deployed there for now. The Docker image
+> runs on any Docker host; the Space files ([deploy/](deploy/),
+> [scripts/deploy_space.ps1](scripts/deploy_space.ps1)) are kept for later. The reranker model
+> repo is a free model repo and is used by every Docker build.
+
+The [Dockerfile](Dockerfile) builds a CPU-only image (Python 3.12 slim, CPU PyTorch, non-root
+user, port 7860). At build time it downloads the int8 ONNX reranker from the model repo
+[MohammadBilalHabibi12345/signpost-reranker-onnx-int8](https://huggingface.co/MohammadBilalHabibi12345/signpost-reranker-onnx-int8)
+and the e5 embedding model, ingests the collection and builds the index; at run time it makes
+no Hub calls. The image is about 3–3.5 GB; the server needs 3–4 GB RAM.
+
+Why a model repo for the 570 MB reranker: exporting it inside the build would add 5–8 minutes
+and several GB of RAM to every build; Git LFS in the Space repo would re-push it with the code.
+A model repo is uploaded once, versioned on its own, and downloaded in seconds by the build.
+
+**One-time setup (Windows)**
+
+1. Docker Desktop: in PowerShell as Administrator run `wsl --install --no-distribution`,
+   restart, then `winget install -e --id Docker.DockerDesktop` (keep "Use WSL 2"), start
+   Docker Desktop and check with `docker run hello-world`.
+2. Hugging Face: create a token with **Write** access at
+   https://huggingface.co/settings/tokens, then run `.venv\Scripts\hf.exe auth login`.
+3. Upload the reranker once (done for this project; free) and create the Space (needs PRO):
+   `powershell -ExecutionPolicy Bypass -File scripts\deploy_space.ps1 -UploadReranker`
+
+**Build and run locally**
+
+```bash
+docker build -t signpost .
+docker run --rm -p 7860:7860 --env-file .env signpost
+```
+
+Open http://127.0.0.1:7860 (startup takes about a minute while the models load).
+`--env-file` passes values literally, so values in `.env` must not be in quotes.
+
+**Space settings, if you deploy to a Space** (needs HF PRO; Settings → Variables and secrets;
+the deploy script sets the variables):
+
+| Name | Kind | Value |
+|---|---|---|
+| `LLM_API_KEY` | **secret** | your API key (set it yourself; never in a file or script) |
+| `LLM_PROVIDER` | variable | `openai` |
+| `LLM_BASE_URL` | variable | `https://api.openai.com/v1` |
+| `LLM_MODEL` | variable | `gpt-6-luna` (the tested model; the code default is `gpt-4o-mini`) |
+| `TRUST_FORWARDED_FOR` | variable | `true` (rate limit per real client IP behind the Space proxy) |
+| `DAILY_QUESTION_LIMIT` | variable | `200` (optional; same as the default) |
+
+All other settings use the tested code defaults. If answers are too slow, `RERANK_CANDIDATES=10`
+roughly halves the reranking time (see the latency table above).
+
+**Deploy / update**: `powershell -ExecutionPolicy Bypass -File scripts\deploy_space.ps1`
+uploads only what the image needs (no PDFs, models, index or secrets; `-DryRun` lists the
+files) and starts a build; follow it with
+`.venv\Scripts\hf.exe spaces logs MohammadBilalHabibi12345/signpost --build -f`.
+
+**Expected speed on a CPU basic Space** (2 vCPU): reranking takes about 9 s on the
+4-core laptop used for development, so expect roughly 15–20 s there plus 2–3 s for the LLM,
+**about 18–25 s per answer**. This is an estimate until measured (`timings_ms` in every
+`/api/ask` response).
+
+**CI**: [.github/workflows/ci.yml](.github/workflows/ci.yml) runs ruff and the fast tests
+on every push and pull request (CPU PyTorch, no model downloads, no API key).
+[.github/workflows/docker.yml](.github/workflows/docker.yml) builds the image on a Linux runner
+whenever the Dockerfile, code or knowledge base changes, starts it and checks health, sources,
+the chat page, small talk and one retrieval + reranking question (the LLM is pointed at an
+unreachable address on purpose, so no API key is used and that question must return 503).
 
 ## Layout
 
@@ -302,7 +381,8 @@ data/processed/ cleaned documents and chunks (JSONL)
 index/          FAISS + BM25 artifacts (git-ignored)
 models/         exported int8 ONNX reranker (git-ignored)
 eval/           evaluation runner and results
-scripts/        CLI scripts
+scripts/        CLI scripts (incl. deploy_space.ps1)
+deploy/         Hugging Face Space README and reranker model card
 tests/          pytest tests
 ```
 

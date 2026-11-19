@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -74,7 +75,11 @@ def made() -> dict[str, FakePipeline]:
 
 
 def make_client(
-    tmp_path: Path, made: dict[str, FakePipeline], fail: bool = False, **overrides
+    tmp_path: Path,
+    made: dict[str, FakePipeline],
+    fail: bool = False,
+    now: Callable[[], datetime] | None = None,
+    **overrides,
 ) -> tuple[TestClient, Clock]:
     settings = Settings(_env_file=None, logs_dir=tmp_path / "logs", **overrides)
 
@@ -86,7 +91,8 @@ def make_client(
         return Services(ChunkStore(CORPUS), make_pipeline, {"llm": "fake/fake-llm"})
 
     clock = Clock()
-    return TestClient(create_app(settings, loader=loader, clock=clock)), clock
+    extra = {"now": now} if now else {}
+    return TestClient(create_app(settings, loader=loader, clock=clock, **extra)), clock
 
 
 @pytest.fixture
@@ -121,6 +127,8 @@ def test_health_reports_chunks_and_models(client: TestClient) -> None:
     assert body["models_loaded"] is True
     assert body["models"] == {"llm": "fake/fake-llm"}
     assert body["modes_loaded"] == ["hybrid_rerank"]
+    assert body["questions_today"] == 0
+    assert body["daily_question_limit"] == 200
 
 
 def test_liveness_probe_works_without_models() -> None:
@@ -344,3 +352,78 @@ def test_wrong_method_returns_json_error(client: TestClient) -> None:
     response = client.get("/api/ask")
     assert response.status_code == 405
     assert response.json()["error"]["code"] == "method_not_allowed"
+
+
+# ------------------------------------------------------------- daily limit
+
+
+class Today:
+    """A settable UTC "now" for the daily limit."""
+
+    def __init__(self) -> None:
+        self.value = datetime(2026, 11, 19, 23, 0, tzinfo=UTC)
+
+    def __call__(self) -> datetime:
+        return self.value
+
+
+def test_daily_limit_blocks_further_llm_questions(
+    tmp_path: Path, made: dict[str, FakePipeline]
+) -> None:
+    today = Today()
+    test_client, _ = make_client(tmp_path, made, now=today, daily_question_limit=2)
+    with test_client:
+        assert test_client.post("/api/ask", json={"question": "1?"}).status_code == 200
+        assert test_client.post("/api/ask", json={"question": "2?"}).status_code == 200
+        blocked = test_client.post("/api/ask", json={"question": "3?"})
+        health = test_client.get("/api/health").json()
+
+    assert blocked.status_code == 429
+    error = blocked.json()["error"]
+    assert error["code"] == "daily_limit_reached"
+    assert "daily limit" in error["message"] and "00:00 UTC" in error["message"]
+    assert blocked.headers["Retry-After"] == "3600"  # 23:00 -> midnight UTC
+    assert made["hybrid_rerank"].questions == ["1?", "2?"]  # pipeline not called
+    assert health["questions_today"] == 2
+    logged = read_jsonl(tmp_path / "logs" / "queries.jsonl")
+    assert logged[-1]["error"] == "daily_limit"
+
+
+def test_questions_without_llm_call_do_not_count(
+    tmp_path: Path, made: dict[str, FakePipeline]
+) -> None:
+    test_client, _ = make_client(tmp_path, made, daily_question_limit=1)
+    with test_client:
+        for _ in range(3):  # the fake refuses pizza questions without an LLM call
+            refusal = test_client.post("/api/ask", json={"question": "Best pizza?"})
+            assert refusal.status_code == 200
+        assert test_client.get("/api/health").json()["questions_today"] == 0
+        assert test_client.post("/api/ask", json={"question": "Fees?"}).status_code == 200
+        assert test_client.post("/api/ask", json={"question": "More?"}).status_code == 429
+
+
+def test_llm_failures_do_not_use_the_daily_budget(
+    tmp_path: Path, made: dict[str, FakePipeline]
+) -> None:
+    test_client, _ = make_client(tmp_path, made, fail=True, daily_question_limit=1)
+    with test_client:
+        for _ in range(2):
+            assert test_client.post("/api/ask", json={"question": "Q?"}).status_code == 503
+        assert test_client.get("/api/health").json()["questions_today"] == 0
+
+
+def test_daily_limit_resets_at_midnight_utc(tmp_path: Path, made: dict[str, FakePipeline]) -> None:
+    today = Today()
+    test_client, _ = make_client(tmp_path, made, now=today, daily_question_limit=1)
+    with test_client:
+        assert test_client.post("/api/ask", json={"question": "1?"}).status_code == 200
+        assert test_client.post("/api/ask", json={"question": "2?"}).status_code == 429
+        today.value = datetime(2026, 11, 20, 0, 0, 1, tzinfo=UTC)
+        assert test_client.post("/api/ask", json={"question": "3?"}).status_code == 200
+
+
+def test_daily_limit_zero_means_unlimited(tmp_path: Path, made: dict[str, FakePipeline]) -> None:
+    test_client, _ = make_client(tmp_path, made, daily_question_limit=0, rate_limit_per_minute=100)
+    with test_client:
+        for i in range(25):
+            assert test_client.post("/api/ask", json={"question": f"{i}?"}).status_code == 200

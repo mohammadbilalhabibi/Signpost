@@ -1,0 +1,41 @@
+# Keep the Docker build context small and free of secrets. The Dockerfile copies only
+# pyproject.toml, app/, scripts/ and the collection's sources.json + text/.
+
+# Secrets and local environments
+.env
+.env.*
+.venv/
+venv/
+env/
+
+# Git, CI and editor config
+.git/
+.github/
+.vscode/
+.idea/
+
+# Caches and build output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# Generated at build time inside the image (or downloaded there)
+models/
+index/
+data/processed/
+data/raw/
+logs/
+
+# Not needed in the image
+eval/results/
+tests/
+deploy/
+DIT_Arrival_RAG_English/DIT_Arrival_RAG_English/documents/
+DIT_Arrival_RAG_English/DIT_Arrival_RAG_English/reference_only/
+DIT_Arrival_RAG_English/DIT_Arrival_RAG_English/Source_Guide.pdf
+**/*.pdf

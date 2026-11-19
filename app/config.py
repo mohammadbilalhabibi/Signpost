@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = Field(
         default=10, ge=1, description="Questions per client IP per minute (POST /api/ask)."
     )
+    daily_question_limit: int = Field(
+        default=200,
+        ge=0,
+        description=(
+            "Questions answered by the LLM per UTC day, all users together (protects API "
+            "credits; 0 = no limit). Kept in memory: also resets when the server restarts."
+        ),
+    )
     feedback_rate_limit_per_minute: int = Field(
         default=30, ge=1, description="Feedback requests per client IP per minute."
     )

@@ -30,7 +30,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import Settings, get_settings
 from app.generation.llm_client import GenerationError
 from app.generation.pipeline import Answer
-from app.ratelimit import RateLimiter
+from app.ratelimit import DailyLimiter, RateLimiter
 from app.retrieval.base import ChunkStore
 from app.retrieval.factory import Mode
 
@@ -40,6 +40,18 @@ STATIC_DIR = Path(__file__).parent / "static"
 MAX_QUESTION_CHARS = 500
 MAX_COMMENT_CHARS = 1000
 DEFAULT_MODE: Mode = "hybrid_rerank"
+DAILY_LIMIT_MESSAGE = (
+    "Signpost has reached its daily limit of answered questions. Please try again tomorrow "
+    "(the limit resets at 00:00 UTC)."
+)
+
+
+class DailyLimitReached(Exception):
+    """The shared daily question budget (DAILY_QUESTION_LIMIT) is used up."""
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__("daily question limit reached")
+        self.retry_after = retry_after
 
 
 # ----------------------------------------------------------------- request bodies
@@ -182,11 +194,13 @@ def create_app(
     settings: Settings | None = None,
     loader: Callable[[Settings], Services] = load_services,
     clock: Callable[[], float] = time.monotonic,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> FastAPI:
-    """Build the FastAPI app; ``loader`` and ``clock`` are replaceable for tests."""
+    """Build the FastAPI app; ``loader``, ``clock`` and ``now`` are replaceable for tests."""
     settings = settings or get_settings()
     ask_limiter = RateLimiter(settings.rate_limit_per_minute, clock=clock)
     feedback_limiter = RateLimiter(settings.feedback_rate_limit_per_minute, clock=clock)
+    daily_limiter = DailyLimiter(settings.daily_question_limit, now=now)
     query_log = JsonlLog(Path(settings.logs_dir) / "queries.jsonl")
     feedback_log = JsonlLog(Path(settings.logs_dir) / "feedback.jsonl")
     recent_ids: deque[str] = deque(maxlen=10_000)
@@ -244,6 +258,15 @@ def create_app(
         code = _STATUS_CODES.get(exc.status_code, "error")
         return _error(exc.status_code, code, str(exc.detail), headers=exc.headers)
 
+    @app.exception_handler(DailyLimitReached)
+    async def daily_limit_reached(request: Request, exc: DailyLimitReached) -> JSONResponse:
+        return _error(
+            429,
+            "daily_limit_reached",
+            DAILY_LIMIT_MESSAGE,
+            headers={"Retry-After": str(exc.retry_after)},
+        )
+
     @app.exception_handler(GenerationError)
     async def generation_error(request: Request, exc: GenerationError) -> JSONResponse:
         logger.error("LLM error: %s", exc)
@@ -277,6 +300,8 @@ def create_app(
             "models": services.models,
             "default_mode": services.default_mode,
             "modes_loaded": services.loaded_modes,
+            "questions_today": daily_limiter.used,
+            "daily_question_limit": settings.daily_question_limit,
         }
 
     @app.get("/api/sources")
@@ -293,11 +318,20 @@ def create_app(
         mode = body.mode or services.default_mode
         question_id = uuid.uuid4().hex
         record: dict[str, Any] = {"id": question_id, "timestamp": _now(), "mode": mode}
+        if not daily_limiter.acquire():
+            query_log.append({**record, "question": body.question, "error": "daily_limit"})
+            raise DailyLimitReached(daily_limiter.seconds_until_reset())
         try:
             result = services.pipeline(mode).answer(body.question)
         except GenerationError:
+            daily_limiter.release()
             query_log.append({**record, "question": body.question, "error": "llm_unavailable"})
             raise
+        except Exception:
+            daily_limiter.release()
+            raise
+        if result.model is None:  # small talk or score-threshold refusal: no LLM call
+            daily_limiter.release()
         recent_ids.append(question_id)
         query_log.append(
             {
