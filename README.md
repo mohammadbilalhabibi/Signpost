@@ -9,9 +9,14 @@ student ID and IT accounts, student housing, address registration, residence per
 health insurance, banking, student jobs. Answers are in English. Every answer cites the
 original official page; if the answer is not in the sources, Signpost says so.
 
-> Status: ingestion, chunking, retrieval (BM25, dense, hybrid, reranked), answer
-> generation with citations, the web app and an acceptance-question evaluation
-> ([eval/](eval/)) are implemented.
+Signpost replaces my earlier rule-based chatbot "Degbot" with retrieval-augmented
+generation over a curated, cited source collection.
+
+> Status: ingestion, hybrid retrieval with reranking, cited answer generation and the web
+> app work end to end on the English DIT arrival collection, and are evaluated on its 40
+> acceptance questions (latest run: expected source cited for 38/38; manual review 31 pass /
+> 9 partial / 0 fail, see [Evaluation](#evaluation)). Next: Docker deployment on Hugging Face
+> Spaces.
 
 ## Stack
 
@@ -20,7 +25,7 @@ Reciprocal Rank Fusion · bge-reranker-v2-m3 · any OpenAI-compatible LLM.
 
 ## Setup
 
-Requires Python 3.11+.
+Requires Python 3.12+.
 
 ```bash
 python -m venv .venv
@@ -38,11 +43,11 @@ With `make` (Linux/macOS/WSL):
 | Command        | What it does                          |
 |----------------|---------------------------------------|
 | `make install` | Install the package + dev tools       |
-| `make ingest`  | Download, clean and chunk sources     |
+| `make ingest`  | Ingest and chunk the source collection |
 | `make index`   | Build FAISS + BM25 indexes            |
 | `make reranker`| Export the int8 ONNX reranker (once)  |
 | `make serve`   | Run the API on http://localhost:7860  |
-| `make eval`    | Run the evaluation (stub)             |
+| `make eval`    | Run the 40 acceptance questions (LLM) |
 | `make test`    | Run pytest                            |
 | `make lint`    | Run ruff check + format check         |
 | `make format`  | Auto-format and auto-fix with ruff    |
@@ -95,6 +100,21 @@ What [app/ingest/collection.py](app/ingest/collection.py) does:
 The older web crawler ([app/ingest/pipeline.py](app/ingest/pipeline.py): polite
 fetching, robots.txt, trafilatura/PyMuPDF extraction) is still available for a YAML list
 of URLs: `python scripts/ingest.py --urls my_sources.yaml`.
+
+## Sources and attribution
+
+The answer sources are public pages and documents of Deggendorf Institute of Technology,
+Studierendenwerk Niederbayern/Oberpfalz, the City and the District (Landkreis) of
+Deggendorf, Make it in Germany, DAAD, ARD ZDF Deutschlandradio Beitragsservice and the
+official English translation of the Federal Registration Act (gesetze-im-internet.de).
+The original publishers keep all rights to their content. Every answer links to the
+original official page, and `sources.json` records each source's URL, publisher and
+capture date. Only the English text copies needed by the pipeline are in this repository;
+the publishers' PDFs (`documents/`, `reference_only/`, `Source_Guide.pdf`) are git-ignored
+and not redistributed. D27 and D30 contain English translations or summaries of German
+authority pages made for the collection; they are labelled as such, and the German
+originals are authoritative. The collection is a snapshot of 18 November 2026: check the
+original pages before relying on fees, deadlines or contacts.
 
 ## Retrieval
 
@@ -276,11 +296,12 @@ models again.
 
 ```
 app/            api.py, config.py, ingest/, retrieval/, generation/, static/
-data/raw/       downloaded source files (git-ignored)
+DIT_Arrival_RAG_English/  source collection: sources.json, text/ copies, evaluation questions
+data/raw/       downloads of the optional URL crawler (git-ignored)
 data/processed/ cleaned documents and chunks (JSONL)
 index/          FAISS + BM25 artifacts (git-ignored)
 models/         exported int8 ONNX reranker (git-ignored)
-eval/           questions, evaluation runner, results
+eval/           evaluation runner and results
 scripts/        CLI scripts
 tests/          pytest tests
 ```

@@ -128,7 +128,8 @@ class Settings(BaseSettings):
 
     # Ingestion
     ingest_user_agent: str = (
-        "SignpostIngest/0.1 (non-commercial student project; bilingual RAG assistant)"
+        "SignpostIngest/0.1 "
+        "(non-commercial student project; RAG assistant for international students)"
     )
     ingest_request_delay: float = Field(
         default=1.0, ge=1.0, description="Minimum seconds between requests to one host."

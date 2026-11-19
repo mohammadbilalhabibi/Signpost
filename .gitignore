@@ -45,6 +45,11 @@ logs/
 *.zip
 *.tar.gz
 
+# Source collection: publisher PDFs are not redistributed (the pipeline uses text/ copies)
+DIT_Arrival_RAG_English/DIT_Arrival_RAG_English/documents/
+DIT_Arrival_RAG_English/DIT_Arrival_RAG_English/reference_only/
+DIT_Arrival_RAG_English/DIT_Arrival_RAG_English/Source_Guide.pdf
+
 # Editors / OS
 .vscode/
 .idea/

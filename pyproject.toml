@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "signpost"
 version = "0.1.0"
-description = "Bilingual (DE/EN) RAG assistant for international students at DIT and in Bavaria."
+description = "English RAG assistant for international students arriving at DIT (Deggendorf), with cited answers from official sources."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     # API
     "fastapi>=0.115",
@@ -52,7 +52,7 @@ app = ["static/*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 extend-exclude = ["data", "index"]
 
 [tool.ruff.lint]
