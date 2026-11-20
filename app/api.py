@@ -365,6 +365,7 @@ def create_app(
                 "refusal_reason": result.refusal_reason,
                 "best_score": result.best_score,
                 "cited_doc_ids": sorted({c.doc_id for c in result.citations}),
+                "retried": result.retried,
                 "timings_ms": result.timings_ms,
             }
         )

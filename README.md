@@ -18,9 +18,9 @@ generation over a curated, cited source collection.
 > Status: ingestion, hybrid retrieval with reranking, cited answer generation and the web
 > app work end to end on the English DIT arrival collection, and are evaluated on its 40
 > acceptance questions (latest run: expected source cited for 38/38; manual review 31 pass /
-> 9 partial / 0 fail, see [Evaluation](#evaluation)). A Docker image and CI are ready; there
-> is no public deployment yet, because Hugging Face Docker Spaces need a paid PRO plan
-> (see [Docker and deployment](#docker-and-deployment)).
+> 9 partial / 0 fail, see [Evaluation](#evaluation)). It runs on Azure Container Apps at
+> https://signpost.icyground-8b8d4d52.francecentral.azurecontainerapps.io (scales to zero
+> when idle; see [Deployment on Azure Container Apps](#deployment-on-azure-container-apps)).
 
 ## Stack
 
@@ -212,7 +212,10 @@ python scripts/ask.py --interactive            # models load once, then ask many
    translated summaries; ask one short question when the answer depends on the semester,
    degree vs. exchange status, citizenship/residence status, campus or job type; never
    invent vacancies, appointments, premiums or legal decisions; answer in English unless
-   the user explicitly asks for another language;
+   the user explicitly asks for another language. The passages are wrapped in
+   `<passages>` tags and the question is stated before and after them, so a passage that
+   ends like an FAQ heading cannot swallow the question. A reply of type answer or clarify
+   that cites nothing is sent once more with a correction (`retried` in the result);
 5. returns the answer, `response_type` (`answer`, `clarify`, `not_found`, `refused`,
    `smalltalk`), the citations actually used (number, title, original url, snippet), the
    cited sources grouped per document, the retrieved chunks, `refused`, the mode and
@@ -251,9 +254,11 @@ Results on 19 November 2026 (hybrid_rerank, int8 ONNX reranker, 20 candidates, 2
 | run1 | new collection | 37/38 | 36/38 | 0.88 | 28 / 10 / 2 |
 | run2 | publisher/scope context in chunk headers; prompt: conditions, contacts, general vs specific rules | 38/38 | 38/38 | 0.93 | 31 / 8 / 1 |
 | run3 | prompt: address registration vs residence permit kept apart | 38/38 | 38/38 | 0.91 | 31 / 9 / 0 |
+| run4 | question outside tagged passages; one retry for uncited replies | 38/38 | 38/38 | 0.89 | 14 re-read: 8 / 6 / 0 (same 14 in run3: 5 / 9 / 0) |
 
 (38 of the 40 questions have expected sources; the greeting and the live-vacancy question
-have none.) The manual review is a single reviewer's judgement, and the LLM is not
+have none. In run4 only the 14 answers that changed or were partial in run3 were re-read;
+see `eval/results/run4-full-review.md`.) The manual review is a single reviewer's judgement, and the LLM is not
 deterministic: grades of individual questions can change between runs.
 
 Known limitations:
@@ -370,6 +375,71 @@ on every push and pull request (CPU PyTorch, no model downloads, no API key).
 whenever the Dockerfile, code or knowledge base changes, starts it and checks health, sources,
 the chat page, small talk and one retrieval + reranking question (the LLM is pointed at an
 unreachable address on purpose, so no API key is used and that question must return 503).
+
+## Deployment on Azure Container Apps
+
+Live: https://signpost.icyground-8b8d4d52.francecentral.azurecontainerapps.io
+
+**How it fits together**
+
+- **Image**: [.github/workflows/docker.yml](.github/workflows/docker.yml) builds the image on
+  every push to `main`, starts it, checks it, measures its memory and pushes it to the public
+  package `ghcr.io/mohammadbilalhabibi/signpost` (`:latest` and `:<commit>`). GitHub
+  Container Registry is free and nothing large is uploaded from your machine. The Azure
+  alternatives were building locally and pushing (several GB over a slow upload, and Docker
+  Desktop needs a current WSL) or `az acr build` (simple, faster wake-up, but a Basic
+  registry costs about 5 USD/month of credit).
+- **Container App** `signpost` in resource group `signpost-rg`, region **France Central**
+  (the Azure for Students policy only allows francecentral, norwayeast, polandcentral,
+  belgiumcentral and switzerlandnorth), Consumption plan, **scale to zero** (min 0, max 1
+  replica), external HTTPS ingress to port 7860. Definition: [deploy/containerapp.yaml](deploy/containerapp.yaml).
+- **Size: 1.75 vCPU / 3.5 GiB.** Measured memory: 1.60 GiB after startup and a 2.07 GiB peak
+  after 3 questions (`docker stats` on the GitHub runner, LLM unreachable), and a 2.44 GiB peak
+  while answering 3 real questions on Azure (`WorkingSetBytes`). 1.75/3.5 is the smallest
+  Consumption size with at least 25 % headroom (1.5/3.0 would leave 19 %).
+- **Free grant**: 180,000 vCPU-seconds and 360,000 GiB-seconds per month give
+  180,000 / 1.75 = 360,000 / 3.5 = **102,857 s ≈ 28.6 hours of running replica per month**.
+  Idle time at zero replicas costs nothing; a woken replica stays up for the 300 s cooldown
+  after the last request, so every visit uses at least about 5 minutes.
+- **Settings**: secret `llm-api-key` (set from `.env` by the script, never printed) mapped to
+  `LLM_API_KEY`; environment variables `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL=gpt-6-luna`,
+  `TRUST_FORWARDED_FOR=true`, `DAILY_QUESTION_LIMIT=200`. Container Apps ingress appends the
+  client address as the right-most `X-Forwarded-For` entry (Microsoft docs: "Only the
+  rightmost IP is provided by Azure Container Apps"); the app uses the right-most public
+  address, so client-supplied values cannot bypass the rate limit (tested live: 4 requests
+  with different spoofed values, limit 3 → the 4th got 429).
+- **Probes**: startup `GET /api/health` every 5 s for up to 10 minutes (model loading takes
+  about a minute), readiness `GET /api/health`, liveness `GET /health`.
+- **Costs**: no Log Analytics workspace (`--logs-destination none`); a monthly **budget of
+  20 USD** with e-mail alerts at 50 % and 80 % (actual) and 100 % (forecast). Budgets only
+  alert; they do not stop resources. Delete everything with
+  `az group delete --name signpost-rg`.
+
+**Deploy or update** (after `az login`; the script explains every `az` command):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\deploy_azure.ps1
+```
+
+It registers the resource providers, creates the resource group, the Consumption
+environment and the app (or updates it), sets the secret, replaces the running replica and
+creates the budget. A new image from GitHub Actions is used the next time a replica starts;
+run the script again to switch immediately. Logs:
+`az containerapp logs show -n signpost -g signpost-rg --follow`.
+
+Note: `az containerapp env create` (CLI 2.93) creates an *express* environment, which does
+not support revision restarts or revision suffixes; the script replaces the replica by
+updating a `DEPLOYED_AT` environment variable instead.
+
+If budgets are not available on a subscription: Azure portal → Cost Management →
+Budgets → Add → scope: the subscription, amount 20, monthly, alert conditions 50/80/100 %,
+your e-mail.
+
+**Measured speed** (20 November 2026, 1.75 vCPU / 3.5 GiB): after the app had scaled to zero,
+the first request answered after **20 s** (start + model loading; can be longer when Azure
+starts the replica on a machine that has not cached the 5.4 GB image yet). Answers on the
+running replica took **10.5–12 s** (about 9 s reranking, 2 s LLM); at 1.5 vCPU they took
+10–16 s. The app scaled to zero about 5–8 minutes after the last request.
 
 ## Layout
 

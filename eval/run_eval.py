@@ -83,6 +83,7 @@ def run(args: argparse.Namespace) -> list[dict[str, Any]]:
             cited = _dedupe([c.doc_id for c in result.citations])
             record = {
                 "response_type": result.response_type,
+                "retried": result.retried,
                 "refused": result.refused,
                 "refusal_reason": result.refusal_reason,
                 "best_score": result.best_score,

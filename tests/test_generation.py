@@ -22,6 +22,7 @@ from app.generation.pipeline import (
     response_language,
 )
 from app.generation.prompts import (
+    CITATION_RETRY_NOTE,
     REFUSAL_TEXT,
     SYSTEM_PROMPT,
     build_user_prompt,
@@ -294,7 +295,7 @@ def test_llm_gets_numbered_passages_and_the_question() -> None:
     for i in range(1, 6):
         assert f"[{i}] Source {i}" in user
     assert user.startswith("Today's date: ")
-    assert user.rstrip().endswith("Question: How do I register?")
+    assert user.rstrip().endswith("Answer the student's question: How do I register?")
 
 
 def test_passages_carry_source_metadata_and_links() -> None:
@@ -347,7 +348,19 @@ def test_rerank_split_gives_the_same_result_as_search() -> None:
 
 
 def test_build_user_prompt_strips_whitespace() -> None:
-    assert build_user_prompt("  Q?  ", [make_hit(1)]).endswith("Question: Q?")
+    assert build_user_prompt("  Q?  ", [make_hit(1)]).endswith("Answer the student's question: Q?")
+
+
+def test_question_stays_outside_the_passages() -> None:
+    # The FAQ intro line that made the model miss the question ("I don't see a question").
+    faq_text = "FAQ > FAQ\n\nQuestions regarding the application:"
+    faq = Hit(**{**make_hit(1).__dict__, "text": faq_text})
+    prompt = build_user_prompt("How do I apply for a room?", [faq])
+    before, rest = prompt.split("<passages>", 1)
+    inside, after = rest.split("</passages>", 1)
+    assert "Student's question: How do I apply for a room?" in before
+    assert "How do I apply for a room?" not in inside
+    assert after.strip() == "Answer the student's question: How do I apply for a room?"
 
 
 @pytest.mark.parametrize(
@@ -476,3 +489,54 @@ def test_limit_per_document_fills_up_when_few_documents() -> None:
 def test_limit_per_document_can_be_disabled() -> None:
     hits = [hit_of("D08", i, 0.9 - i / 100) for i in range(6)]
     assert limit_per_document(hits, k=5, cap=0) == hits[:5]
+
+
+# ------------------------------------------------------- uncited replies
+
+
+class SequenceLLM(FakeLLM):
+    """Returns the given replies in order (the last one repeats)."""
+
+    def __init__(self, *replies: str) -> None:
+        super().__init__(replies[0])
+        self.replies = list(replies)
+
+    def complete(self, system: str, user: str) -> LLMResult:
+        self.text = self.replies[min(len(self.calls), len(self.replies) - 1)]
+        return super().complete(system, user)
+
+
+def test_bare_clarify_question_is_asked_again() -> None:
+    llm = SequenceLLM(
+        "TYPE: clarify\nWhat would you like to know about student housing?",
+        "TYPE: clarify\nApply online at any time [1]. Are you a degree or exchange student?",
+    )
+    result = reranked_pipeline(FIVE_SCORES, llm).answer("How do I apply for a room?")
+    assert len(llm.calls) == 2
+    assert CITATION_RETRY_NOTE in llm.calls[1][1] and CITATION_RETRY_NOTE not in llm.calls[0][1]
+    assert result.retried is True and result.response_type == "clarify"
+    assert [c.number for c in result.citations] == [1]
+    assert result.answer.startswith("Apply online at any time")
+
+
+def test_uncited_answer_is_asked_again() -> None:
+    llm = SequenceLLM("TYPE: answer\nYou can apply any time.", "TYPE: answer\nAny time [2].")
+    result = reranked_pipeline(FIVE_SCORES, llm).answer("When can I apply?")
+    assert len(llm.calls) == 2 and result.retried is True
+    assert [c.number for c in result.citations] == [2]
+
+
+def test_retry_happens_only_once() -> None:
+    llm = SequenceLLM("TYPE: clarify\nWhich semester?")
+    result = reranked_pipeline(FIVE_SCORES, llm).answer("Which fees?")
+    assert len(llm.calls) == 2  # original + one retry, then the reply is used as it is
+    assert result.retried is True and result.citations == []
+
+
+@pytest.mark.parametrize(
+    "reply", ["TYPE: answer\nYes [1].", "TYPE: not_found\nThe passages do not say."]
+)
+def test_cited_or_not_found_replies_are_not_retried(reply: str) -> None:
+    llm = FakeLLM(reply)
+    result = reranked_pipeline(FIVE_SCORES, llm).answer("Question?")
+    assert len(llm.calls) == 1 and result.retried is False

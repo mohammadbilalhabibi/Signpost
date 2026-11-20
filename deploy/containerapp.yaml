@@ -1,0 +1,72 @@
+# Azure Container Apps definition for Signpost (applied by scripts/deploy_azure.ps1).
+# Placeholders __LIKE_THIS__ are filled in by the script. The real LLM API key is never in
+# this file: the script creates the app with a placeholder secret and then sets the real
+# value with `az containerapp secret set` (read from .env, never printed).
+location: __LOCATION__
+properties:
+  managedEnvironmentId: __ENVIRONMENT_ID__
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 7860
+      transport: auto
+      allowInsecure: false
+    secrets:
+      - name: llm-api-key
+        value: placeholder-replaced-by-deploy-script
+  template:
+    containers:
+      - name: signpost
+        image: __IMAGE__
+        resources:
+          cpu: __CPU__
+          memory: __MEMORY__
+        env:
+          - name: LLM_API_KEY
+            secretRef: llm-api-key
+          - name: LLM_PROVIDER
+            value: __LLM_PROVIDER__
+          - name: LLM_BASE_URL
+            value: __LLM_BASE_URL__
+          - name: LLM_MODEL
+            value: __LLM_MODEL__
+          # Container Apps ingress appends the client IP as the right-most X-Forwarded-For
+          # entry; the app uses the right-most public address (spoof-safe).
+          - name: TRUST_FORWARDED_FOR
+            value: "true"
+          - name: DAILY_QUESTION_LIMIT
+            value: "__DAILY_QUESTION_LIMIT__"
+        probes:
+          # Model loading takes about a minute on a small CPU: allow up to 10 minutes
+          # (5 s x 120 attempts) before Azure gives up, so it never restarts a starting app.
+          - type: Startup
+            httpGet:
+              path: /api/health
+              port: 7860
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 120
+          - type: Readiness
+            httpGet:
+              path: /api/health
+              port: 7860
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          - type: Liveness
+            httpGet:
+              path: /health
+              port: 7860
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+    scale:
+      minReplicas: 0
+      maxReplicas: 1
+      rules:
+        - name: http-requests
+          http:
+            metadata:
+              concurrentRequests: "10"

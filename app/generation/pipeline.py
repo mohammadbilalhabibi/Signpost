@@ -15,6 +15,7 @@ from functools import lru_cache
 from app.config import Settings, get_settings
 from app.generation.llm_client import LLMClient
 from app.generation.prompts import (
+    CITATION_RETRY_NOTE,
     REFUSAL_TEXT,
     SYSTEM_PROMPT,
     build_user_prompt,
@@ -78,6 +79,7 @@ class Answer:
     # "answer" | "clarify" (asks for a missing detail) | "not_found" | "refused" | "smalltalk"
     response_type: str = "answer"
     retrieved: list[dict] = field(default_factory=list)  # [{chunk_id, doc_id, score}, ...]
+    retried: bool = False  # the first LLM reply cited nothing and was asked again
 
     def to_dict(self) -> dict:
         """JSON-serialisable representation (for the API)."""
@@ -243,12 +245,21 @@ class AnswerPipeline:
             )  # fmt: skip
 
         gen_start = time.perf_counter()
-        result = self.llm.complete(SYSTEM_PROMPT, build_user_prompt(question, hits))
+        user_prompt = build_user_prompt(question, hits)
+        result = self.llm.complete(SYSTEM_PROMPT, user_prompt)
+        response_type, text = parse_response_type(result.text)
+        cited = parse_citations(text, len(hits))
+        retried = False
+        if response_type in ("answer", "clarify") and not cited:
+            # An uncited answer or a bare question ("What would you like to know?") breaks
+            # the grounding rules; ask once more with an explicit correction.
+            retried = True
+            result = self.llm.complete(SYSTEM_PROMPT, f"{user_prompt}\n\n{CITATION_RETRY_NOTE}")
+            response_type, text = parse_response_type(result.text)
+            cited = parse_citations(text, len(hits))
         timings["generation"] = _ms(time.perf_counter() - gen_start)
         timings["total"] = _ms(time.perf_counter() - start)
-        response_type, text = parse_response_type(result.text)
 
-        cited = parse_citations(text, len(hits))
         citations = [
             Citation(
                 number=n,
@@ -275,6 +286,7 @@ class AnswerPipeline:
             sources=group_sources(citations),
             response_type=response_type,
             retrieved=retrieved,
+            retried=retried,
         )
 
 
