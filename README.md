@@ -3,24 +3,127 @@
 [![CI](https://github.com/mohammadbilalhabibi/Signpost/actions/workflows/ci.yml/badge.svg)](https://github.com/mohammadbilalhabibi/Signpost/actions/workflows/ci.yml)
 [![Docker](https://github.com/mohammadbilalhabibi/Signpost/actions/workflows/docker.yml/badge.svg)](https://github.com/mohammadbilalhabibi/Signpost/actions/workflows/docker.yml)
 
-**AI-powered assistant for international students arriving at DIT, with cited answers
-from official sources.**
+**A RAG assistant that answers international students' questions about arriving at
+Deggendorf Institute of Technology (DIT), in English, with a citation to the official
+source for every claim, and says so when the sources don't have the answer.**
 
-Signpost answers questions of international students starting at Deggendorf Institute
-of Technology (DIT) and settling in Deggendorf: enrolment, fees and re-registration,
-student ID and IT accounts, student housing, address registration, residence permits,
-health insurance, banking, student jobs. Answers are in English. Every answer cites the
-original official page; if the answer is not in the sources, Signpost says so.
+**[Live demo](https://signpost.icyground-8b8d4d52.francecentral.azurecontainerapps.io)**:
+the app scales to zero when idle, so the first visit after a quiet period takes about
+15–20 s to wake up (measured 14 s and 20 s on Azure); after that, answers take about 9–12 s.
 
-Signpost replaces my earlier rule-based chatbot "Degbot" with retrieval-augmented
-generation over a curated, cited source collection.
+![Signpost answering a question with citations, highlighting a source, and declining an unanswerable question](docs/demo.gif)
 
-> Status: ingestion, hybrid retrieval with reranking, cited answer generation and the web
-> app work end to end on the English DIT arrival collection, and are evaluated on its 40
-> acceptance questions (latest run: expected source cited for 38/38; manual review 31 pass /
-> 9 partial / 0 fail, see [Evaluation](#evaluation)). It runs on Azure Container Apps at
-> https://signpost.icyground-8b8d4d52.francecentral.azurecontainerapps.io (scales to zero
-> when idle; see [Deployment on Azure Container Apps](#deployment-on-azure-container-apps)).
+<sub>Recorded on the live app. The "Searching the sources…" waits are sped up 4×; the real
+times are shown under each answer.</sub>
+
+Topics: enrolment, fees and re-registration, student ID and IT accounts, student housing,
+address registration, residence permits, health insurance, banking and student jobs.
+Signpost replaces my earlier rule-based chatbot "Degbot".
+
+## Results
+
+Measured on the 40 acceptance questions that come with the source collection
+(38 have an expected source; the other two are a greeting and a live-vacancy question that
+must be declined). Settings: `hybrid_rerank`, top 5 passages, `gpt-6-luna`.
+
+| Run | Change | Expected source in top 5 | Cites an expected source | Citation precision | Review (pass / partial / fail) |
+|---|---|---|---|---|---|
+| run1 | new curated collection | 37/38 | 36/38 | 0.88 | 28 / 10 / 2 |
+| run2 | source context in chunk headers; prompt: conditions, contacts | 38/38 | 38/38 | 0.93 | 31 / 8 / 1 |
+| run3 | prompt: address registration vs residence permit kept apart | 38/38 | 38/38 | 0.91 | 31 / 9 / 0 |
+| run4 | question outside the tagged passages; retry for uncited replies | 38/38 | 38/38 | 0.89 | 14 re-read: 8 / 6 / 0 |
+| run5 | partial answers count as answers, not "not found" | 38/38 | 37/38 | 0.87 | not reviewed |
+
+**Read these numbers with care.** These 40 questions are the only test set: the prompt
+rules and the refusal threshold (0.02) were tuned on them, so they are a development
+benchmark, not a held-out score. The review column is LLM-graded
+(not by a human) against each question's rubric and the source texts. The LLM is not deterministic, so single grades can change between runs.
+
+**Three findings**
+
+1. **Dense retrieval finds the source; the reranker puts it first and knows when to say
+   no.** Retrieval only, top 5 (`retrieval-*` runs): BM25 found an expected source for
+   35/38 questions (top 1: 23/38), dense e5 for 38/38 (top 1: 29/38), hybrid RRF for 37/38
+   (top 1: 29/38), and hybrid + reranker for 38/38 (top 1: 32/38). Hybrid alone did not beat
+   dense here. Dense similarity scores can't separate an unanswerable question from a real
+   one (0.79 for the live-vacancy question vs 0.82 for the lowest answerable one). The
+   reranker can (0.0005 vs 0.03), which is what lets Signpost refuse before calling the LLM.
+   The cost: reranking takes 7–9 s of the 9–12 s per answer on Azure.
+2. **Better sources fixed answers more than tuning did.** The first version used 38 crawled
+   URLs plus PDFs and documents of mixed quality, and its answers were unsatisfactory
+   (judged by reading them; that version was never measured, so there is no before/after
+   number). Switching to a curated collection of 30 English sources with publisher, period
+   and URL metadata gave 36/38 answers citing an expected source in the first measured run;
+   chunk-header and prompt changes then took that to 38/38 and removed the fails.
+3. **"Not found" was hiding useful answers.** In 3 of the 5 earlier full runs, Q29 (is the
+   rental contract the landlord confirmation?) came back as "not found" even though it
+   cited the right source (D29), so the page showed a "No answer found" banner above useful
+   content. Now a reply that cites passages is a partial answer that names what's missing
+   and who to contact. In run5 no answer was "not found"; the only refusal was the
+   live-vacancy question.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    S["30 curated sources<br/>sources.json + text copies"] --> C["Chunking<br/>≤ 350 tokens, 191 chunks"]
+    C --> B["BM25<br/>rank_bm25"]
+    C --> D["FAISS<br/>multilingual-e5-base"]
+    Q(["Student question"]) --> B & D
+    B --> F["Reciprocal Rank Fusion<br/>k = 60, top 20"]
+    D --> F
+    F --> R["int8 ONNX reranker<br/>bge-reranker-v2-m3"]
+    R --> T{"best score<br/>≥ 0.02?"}
+    T -- no --> X["Fixed refusal<br/>no LLM call"]
+    T -- yes --> L["LLM: top 5 passages<br/>answer with [n] citations"]
+```
+
+```mermaid
+flowchart LR
+    P["git push main"] --> CI["GitHub Actions: CI<br/>ruff + pytest"]
+    P --> DK["GitHub Actions: Docker<br/>build, smoke test, memory check"]
+    DK --> G["GHCR<br/>:latest and :commit"]
+    G -- "scripts/deploy_azure.ps1" --> A["Azure Container Apps<br/>1.75 vCPU / 3.5 GiB, scale 0–1"]
+```
+
+## Design decisions and trade-offs
+
+- **Curated sources, not a crawler**: fewer pages, but each has a publisher, period and
+  original URL, so fees and deadlines stay attached to their semester.
+- **Reranker as int8 ONNX**: about 9 s instead of 24.6 s (fp32) per query on a 4-core
+  laptop, scores within 0.015 of fp32 on average. Its 0–1 score allows refusing below the
+  threshold with a fixed message: no LLM call, nothing invented, but on-topic questions the
+  sources can't answer get a generic refusal instead of a pointer to the right portal.
+- **Grounding checks in code, not only in the prompt**: an uncited answer is asked once
+  more; a "not found" that cites passages is shown as a partial answer.
+- **Scale to zero, image from GHCR**: idle costs nothing and the free grant covers about
+  28.6 running hours a month, at the price of a 15–20 s wake-up; Azure Container Registry
+  would pull faster but costs about 5 USD/month.
+- **Budget protection**: a per-IP rate limit that a spoofed `X-Forwarded-For` can't bypass,
+  and at most 200 LLM-answered questions a day.
+
+## Limitations
+
+- Tested only on the 40 questions it was tuned on, and graded by an AI assistant.
+- A snapshot from 18 November 2026: fees, deadlines and contacts need refreshing each
+  semester; the official pages are authoritative. No live data (free rooms, appointments).
+- Some answers miss a detail or a source (run5: Q13 cites one of its two expected sources,
+  Q31 neither). CPU-only answers take about 9–12 s, mostly reranking.
+
+## Run locally
+
+Needs Docker and an API key for any OpenAI-compatible LLM. The image build downloads the
+models and builds the index (several minutes, about 5.4 GB).
+
+```bash
+git clone https://github.com/mohammadbilalhabibi/Signpost.git && cd Signpost
+cp .env.example .env     # then set LLM_API_KEY, LLM_BASE_URL and LLM_MODEL
+docker build -t signpost .
+docker run --rm -p 7860:7860 --env-file .env signpost    # open http://127.0.0.1:7860
+```
+
+Without Docker, see [Setup](#setup) below. Everything that follows is the detailed
+technical documentation.
 
 ## Stack
 
@@ -245,24 +348,31 @@ python eval/run_eval.py                    # full answers (40 LLM calls, ~8 min)
 [eval/run_eval.py](eval/run_eval.py) runs the 40 acceptance questions in the collection's
 `evaluation_questions.json` (not part of the corpus) and writes `eval/results/<run>.jsonl`
 (answers, retrieved and cited sources, timings) and `<run>.md` (metrics table). Retrieval and
-citation metrics are automatic; factual support and whether a clarification or abstention was
-appropriate were reviewed by hand against each question's rubric and the source texts
-(`eval/results/run*-review.md`).
+citation metrics are automatic. Factual support and whether a clarification or abstention was
+appropriate were LLM-graded against each question's rubric and the source texts
+(`eval/results/run*-review.md`); this is not a human review.
 
-Results on 19 November 2026 (hybrid_rerank, int8 ONNX reranker, 20 candidates, 256 tokens,
-`gpt-6-luna`):
+The run-by-run table is in [Results](#results) (hybrid_rerank, int8 ONNX reranker, 20
+candidates, 256 tokens, `gpt-6-luna`; runs 1–4 on 19–20 November 2026). Files: `run1-full` …
+`run4-full` and their reviews; run5 is `20261120-201349-full` (automatic metrics only). In
+run4 only the 14 answers that changed or were partial in run3 were re-read (the same 14
+scored 5 / 9 / 0 in run3); see `eval/results/run4-full-review.md`.
 
-| Run | Change | Expected source in top 5 | Cites an expected source | Citation precision | Manual review (pass / partial / fail) |
-|---|---|---|---|---|---|
-| run1 | new collection | 37/38 | 36/38 | 0.88 | 28 / 10 / 2 |
-| run2 | publisher/scope context in chunk headers; prompt: conditions, contacts, general vs specific rules | 38/38 | 38/38 | 0.93 | 31 / 8 / 1 |
-| run3 | prompt: address registration vs residence permit kept apart | 38/38 | 38/38 | 0.91 | 31 / 9 / 0 |
-| run4 | question outside tagged passages; one retry for uncited replies | 38/38 | 38/38 | 0.89 | 14 re-read: 8 / 6 / 0 (same 14 in run3: 5 / 9 / 0) |
+Retrieval modes compared on the same 40 questions (retrieval only, top 5, no LLM;
+`eval/results/retrieval-<mode>.*`, 20 November 2026). "Top 1" means the first passage comes
+from an expected source; scores are the best retrieval score of the lowest-scoring
+answerable question and of the live-vacancy question Q40:
 
-(38 of the 40 questions have expected sources; the greeting and the live-vacancy question
-have none. In run4 only the 14 answers that changed or were partial in run3 were re-read;
-see `eval/results/run4-full-review.md`.) The manual review is a single reviewer's judgement, and the LLM is not
-deterministic: grades of individual questions can change between runs.
+| Mode | Expected source in top 5 | All expected sources | Top 1 | MRR | Lowest answerable score | Q40 score |
+|---|---|---|---|---|---|---|
+| `bm25` | 35/38 | 29/38 | 23/38 | 0.73 | 5.26 | 4.99 |
+| `dense` | 38/38 | 34/38 | 29/38 | 0.86 | 0.817 | 0.786 |
+| `hybrid` | 37/38 | 34/38 | 29/38 | 0.85 | 0.0301 | 0.0328 |
+| `hybrid_rerank` | 38/38 | 33/38 | 32/38 | 0.92 | 0.0295 | 0.0005 |
+
+BM25 and dense scores have no fixed scale, and the hybrid RRF score depends only on ranks,
+so only the reranker's 0–1 score separates Q40 from the answerable questions. Median
+retrieval time per question on the laptop: under 0.1 s without the reranker, 10.3 s with it.
 
 Known limitations:
 - The reranker gives near-zero scores both to off-topic questions and to on-topic questions
@@ -445,7 +555,9 @@ your e-mail.
 the first request answered after **20 s** (start + model loading; can be longer when Azure
 starts the replica on a machine that has not cached the 5.4 GB image yet). Answers on the
 running replica took **10.5–12 s** (about 9 s reranking, 2 s LLM); at 1.5 vCPU they took
-10–16 s. The app scaled to zero about 5–8 minutes after the last request.
+10–16 s. The app scaled to zero about 5–8 minutes after the last request. A second
+measurement later the same day (image `123cb00`): wake-up **14.2 s**, then answers in 9.9 s
+and 8.8 s (about 6.9 s reranking, 1.8–2.5 s LLM).
 
 ## Layout
 
@@ -457,6 +569,7 @@ data/processed/ cleaned documents and chunks (JSONL)
 index/          FAISS + BM25 artifacts (git-ignored)
 models/         exported int8 ONNX reranker (git-ignored)
 eval/           evaluation runner and results
+docs/           demo.gif (recorded on the live app with Playwright)
 scripts/        CLI scripts (incl. deploy_space.ps1)
 deploy/         Hugging Face Space README and reranker model card
 tests/          pytest tests
