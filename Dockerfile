@@ -14,8 +14,11 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Non-root user with UID 1000 (the Hugging Face Spaces convention).
-RUN useradd --create-home --uid 1000 user
+# Non-root user with UID 1000 (the Hugging Face Spaces convention). The app folder must
+# belong to that user: model downloads, ingestion and the index are written there as `user`.
+RUN useradd --create-home --uid 1000 user \
+ && mkdir -p /home/user/app \
+ && chown user:user /home/user/app
 WORKDIR /home/user/app
 
 # 1) Dependencies (cached until pyproject.toml changes). CPU-only PyTorch first, so pip

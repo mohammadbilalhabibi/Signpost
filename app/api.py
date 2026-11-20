@@ -6,6 +6,7 @@ every request. Run with:  python -m uvicorn app.api:app --port 7860
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import threading
@@ -167,6 +168,28 @@ class JsonlLog:
             logger.warning("could not write %s: %s", self.path, exc)
 
 
+def client_address(peer: str | None, forwarded_for: str | None, trust_forwarded: bool) -> str:
+    """Client IP used as the rate-limit key.
+
+    Behind a trusted reverse proxy (``TRUST_FORWARDED_FOR``) the real client is the
+    right-most *public* address in X-Forwarded-For: proxies append the address they saw, so
+    entries further left can be set by the client itself (spoofing), and private addresses
+    on the right are internal proxy hops. Otherwise the socket peer address is used.
+    """
+    if trust_forwarded and forwarded_for:
+        for part in reversed(forwarded_for.split(",")):
+            candidate = part.strip().strip("[]")
+            if candidate.count(":") == 1:  # IPv4 with a port, e.g. "203.0.113.7:51234"
+                candidate = candidate.split(":")[0]
+            try:
+                address = ipaddress.ip_address(candidate)
+            except ValueError:
+                continue
+            if address.is_global:
+                return str(address)
+    return peer or "unknown"
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -225,10 +248,10 @@ def create_app(
         return services
 
     def client_ip(request: Request) -> str:
-        forwarded = request.headers.get("x-forwarded-for")
-        if settings.trust_forwarded_for and forwarded:
-            return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else "unknown"
+        peer = request.client.host if request.client else None
+        return client_address(
+            peer, request.headers.get("x-forwarded-for"), settings.trust_forwarded_for
+        )
 
     def enforce(limiter: RateLimiter, request: Request) -> None:
         retry_after = limiter.hit(client_ip(request))

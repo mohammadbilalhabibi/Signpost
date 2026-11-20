@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api import Services, create_app, list_sources
+from app.api import Services, client_address, create_app, list_sources
 from app.config import Settings
 from app.generation.llm_client import GenerationError
 from app.generation.pipeline import Answer, Citation, group_sources
@@ -427,3 +427,43 @@ def test_daily_limit_zero_means_unlimited(tmp_path: Path, made: dict[str, FakePi
     with test_client:
         for i in range(25):
             assert test_client.post("/api/ask", json={"question": f"{i}?"}).status_code == 200
+
+
+# ------------------------------------------------------------- client address
+
+
+@pytest.mark.parametrize(
+    ("forwarded", "expected"),
+    [
+        ("203.0.113.7", "10.1.1.1"),  # documentation range is not public -> socket peer
+        ("8.8.8.8", "8.8.8.8"),
+        ("6.6.6.6, 8.8.8.8", "8.8.8.8"),  # left entry set by the client: ignored
+        ("8.8.8.8, 10.0.0.5, 100.64.0.3", "8.8.8.8"),  # private proxy hops skipped
+        ("8.8.8.8:51234", "8.8.8.8"),  # IPv4 with port
+        ("2001:4860:4860::8888", "2001:4860:4860::8888"),
+        ("unknown, 10.0.0.5", "10.1.1.1"),  # nothing public -> socket peer
+        ("", "10.1.1.1"),
+    ],
+)
+def test_client_address_uses_rightmost_public_forwarded_ip(forwarded: str, expected: str) -> None:
+    assert client_address("10.1.1.1", forwarded, trust_forwarded=True) == expected
+
+
+def test_client_address_ignores_header_when_not_trusted() -> None:
+    assert client_address("10.1.1.1", "8.8.8.8", trust_forwarded=False) == "10.1.1.1"
+    assert client_address(None, None, trust_forwarded=False) == "unknown"
+
+
+def test_spoofed_forwarded_for_cannot_bypass_the_rate_limit(
+    tmp_path: Path, made: dict[str, FakePipeline]
+) -> None:
+    test_client, _ = make_client(tmp_path, made, rate_limit_per_minute=1, trust_forwarded_for=True)
+    with test_client:
+        first = test_client.post(
+            "/api/ask", json={"question": "1?"}, headers={"X-Forwarded-For": "6.6.6.6, 8.8.8.8"}
+        )
+        second = test_client.post(
+            "/api/ask", json={"question": "2?"}, headers={"X-Forwarded-For": "7.7.7.7, 8.8.8.8"}
+        )
+    assert first.status_code == 200
+    assert second.status_code == 429  # same real client (8.8.8.8) despite spoofed entries

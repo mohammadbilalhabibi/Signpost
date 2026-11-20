@@ -31,6 +31,10 @@ on:
 
 permissions:
   contents: read
+  packages: write # push the image to ghcr.io (only on pushes to main)
+
+env:
+  IMAGE: ghcr.io/mohammadbilalhabibi/signpost
 
 jobs:
   build-and-run:
@@ -45,10 +49,24 @@ jobs:
           df -h /
 
       - name: Build image
-        run: docker build -t signpost .
+        run: |
+          set +e
+          docker build --progress=plain \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            -t signpost . 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # Annotations are public: the error is readable without admin rights to the logs.
+            msg=$(tail -n 40 build.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=docker build failed::${msg}"
+          fi
+          exit "$status"
 
       - name: Image size
-        run: docker image ls signpost --format "{{.Repository}}:{{.Tag}}  {{.Size}}"
+        run: |
+          size=$(docker image ls signpost --format "{{.Size}}")
+          echo "image size: $size"
+          echo "::notice title=Image size::$size"
 
       - name: Start container (no API key; LLM unreachable on purpose)
         run: |
@@ -60,7 +78,16 @@ jobs:
             fi
             sleep 5
           done
-          echo "container did not become healthy"; docker logs signpost | tail -80; exit 1
+          echo "container did not become healthy"; docker logs signpost | tail -80
+          msg=$(docker logs signpost 2>&1 | tail -n 30 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=container did not become healthy::${msg}"
+          exit 1
+
+      - name: Memory after startup
+        run: |
+          usage=$(docker stats --no-stream --format "{{.MemUsage}} (CPU {{.CPUPerc}})" signpost)
+          echo "after startup: $usage"
+          echo "::notice title=Memory after startup (docker stats)::$usage"
 
       - name: Check the running app
         run: |
@@ -105,11 +132,34 @@ jobs:
           print("small talk ok")
 
           # Retrieval and ONNX reranking run inside the container; the LLM call then fails.
-          status, body = ask("How do I register my address in Deggendorf?")
-          assert status == 503 and body["error"]["code"] == "llm_unavailable", (status, body)
-          print("retrieval + reranking ran; LLM unreachable as intended -> 503")
+          for question in [
+              "How do I register my address in Deggendorf?",
+              "Which DIT fees do I have to pay?",
+              "Can I work while studying as a non-EU student?",
+          ]:
+              status, body = ask(question)
+              assert status == 503 and body["error"]["code"] == "llm_unavailable", (status, body)
+          print("3 questions: retrieval + reranking ran; LLM unreachable as intended -> 503")
           EOF
+
+      - name: Memory after 3 questions
+        run: |
+          usage=$(docker stats --no-stream --format "{{.MemUsage}}" signpost)
+          peak=$(docker exec signpost cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo "")
+          peak_mib=$([ -n "$peak" ] && echo "$((peak / 1024 / 1024)) MiB" || echo "n/a")
+          echo "after 3 questions: $usage; peak since start: $peak_mib"
+          echo "::notice title=Memory after 3 questions (docker stats)::now $usage, peak $peak_mib"
 
       - name: Container logs
         if: always()
         run: docker logs signpost 2>&1 | tail -60 || true
+
+      - name: Push to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag signpost "$IMAGE:latest"
+          docker tag signpost "$IMAGE:${GITHUB_SHA}"
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${GITHUB_SHA}"
+          echo "::notice title=Pushed::$IMAGE:latest and $IMAGE:${GITHUB_SHA}"
