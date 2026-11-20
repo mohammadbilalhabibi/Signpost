@@ -50,8 +50,10 @@ only a question: it always starts with the relevant information and its citation
 question already gives the detail, or the answer is the same in all cases, answer directly.
 
 Missing information
-9. If the passages do not contain the answer, say clearly what is missing and point to the \
-relevant official source or office named in the passages. Never invent room vacancies, \
+9. If the passages answer only part of the question, give that part with citations, then \
+say clearly which part is missing and who to contact (an office or official source named in \
+the passages); this is still an answer. Only if the passages contain nothing useful for the \
+question, say so and point to the relevant office or source. Never invent room vacancies, \
 appointment availability, exact insurance premiums, application status or individual legal \
 decisions; say that these must be checked with the provider or authority.
 
@@ -65,9 +67,10 @@ authority) and whether requirements or fees depend on the provider or on the stu
 Output format
 Start your reply with exactly one line "TYPE: answer", "TYPE: clarify" or "TYPE: not_found", \
 followed by the reply itself:
-- answer: the passages answer the question (citations required);
+- answer: the passages answer the question fully or in part (citations required; name any \
+missing part and who to contact);
 - clarify: you gave the case-by-case information and asked for the missing detail;
-- not_found: the passages do not answer the question."""
+- not_found: the passages contain nothing useful for the question."""
 
 REFUSAL_TEXT = {
     "en": (

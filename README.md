@@ -221,8 +221,11 @@ python scripts/ask.py --interactive            # models load once, then ask many
    cited sources grouped per document, the retrieved chunks, `refused`, the mode and
    timings in ms (retrieval, reranking, generation, total).
 
-`refused` is true for the score threshold and when the LLM reports that the passages do
-not answer the question (`refusal_reason`: `low_score`, `no_hits`, `not_in_sources`).
+`refused` is true for the score threshold and when the LLM reports that the passages contain
+nothing useful for the question (`refusal_reason`: `low_score`, `no_hits`, `not_in_sources`).
+If the passages answer part of a question, the reply gives that part, names the missing part
+and who to contact, and counts as an `answer`; a `not_found` reply that cites passages is
+treated as such a partial answer, so the page shows no "not found" banner above useful content.
 The threshold applies only to `hybrid_rerank`; other modes have no 0–1 score.
 
 The LLM client ([app/generation/llm_client.py](app/generation/llm_client.py)) works with

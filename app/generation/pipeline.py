@@ -257,6 +257,10 @@ class AnswerPipeline:
             result = self.llm.complete(SYSTEM_PROMPT, f"{user_prompt}\n\n{CITATION_RETRY_NOTE}")
             response_type, text = parse_response_type(result.text)
             cited = parse_citations(text, len(hits))
+        if response_type == "not_found" and cited:
+            # Citing passages means something useful was found: a partial answer (which names
+            # the missing part) is an answer, not a refusal with a "not found" banner.
+            response_type = "answer"
         timings["generation"] = _ms(time.perf_counter() - gen_start)
         timings["total"] = _ms(time.perf_counter() - start)
 

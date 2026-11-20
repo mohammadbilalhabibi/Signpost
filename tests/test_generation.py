@@ -540,3 +540,32 @@ def test_cited_or_not_found_replies_are_not_retried(reply: str) -> None:
     llm = FakeLLM(reply)
     result = reranked_pipeline(FIVE_SCORES, llm).answer("Question?")
     assert len(llm.calls) == 1 and result.retried is False
+
+
+# ---------------------------------------------------------- partial answers
+
+
+def test_cited_not_found_reply_counts_as_partial_answer() -> None:
+    llm = FakeLLM(
+        "TYPE: not_found\nYou may apply before admission [1]. The passages don't give the "
+        "application link; contact the Student Housing department [2]."
+    )
+    result = reranked_pipeline(FIVE_SCORES, llm).answer("How do I apply for a room?")
+    assert result.response_type == "answer"
+    assert result.refused is False and result.refusal_reason is None
+    assert [c.number for c in result.citations] == [1, 2]
+    assert len(llm.calls) == 1  # no retry: the reply cites passages
+
+
+def test_uncited_not_found_reply_stays_a_refusal() -> None:
+    llm = FakeLLM(
+        "TYPE: not_found\nThe passages contain nothing about this. Ask the Welcome Centre."
+    )
+    result = reranked_pipeline(FIVE_SCORES, llm).answer("Is there a gym?")
+    assert result.response_type == "not_found" and result.refused is True
+    assert result.refusal_reason == "not_in_sources"
+
+
+def test_prompt_defines_partial_answers_and_not_found() -> None:
+    assert "contain nothing useful" in SYSTEM_PROMPT
+    assert "answer only part of the question" in SYSTEM_PROMPT
