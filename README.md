@@ -386,8 +386,11 @@ Live: https://signpost.icyground-8b8d4d52.francecentral.azurecontainerapps.io
 **How it fits together**
 
 - **Image**: [.github/workflows/docker.yml](.github/workflows/docker.yml) builds the image on
-  every push to `main`, starts it, checks it, measures its memory and pushes it to the public
-  package `ghcr.io/mohammadbilalhabibi/signpost` (`:latest` and `:<commit>`). GitHub
+  every push to `main` that changes the app, the image files or the sources, starts it, checks
+  it, measures its memory and pushes it to the public package
+  `ghcr.io/mohammadbilalhabibi/signpost` (`:latest` and `:<commit>`). For a commit that only
+  changed other files, publish its image with GitHub → Actions → Docker → "Run workflow" on
+  `main`. GitHub
   Container Registry is free and nothing large is uploaded from your machine. The Azure
   alternatives were building locally and pushing (several GB over a slow upload, and Docker
   Desktop needs a current WSL) or `az acr build` (simple, faster wake-up, but a Basic
