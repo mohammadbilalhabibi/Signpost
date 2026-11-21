@@ -22,9 +22,23 @@ Signpost replaces my earlier rule-based chatbot "Degbot".
 
 ## Results
 
-Measured on the 40 acceptance questions that come with the source collection
+**Held-out test (the fair score):** 25 new questions written after all tuning
+([eval/heldout_questions.json](eval/heldout_questions.json): 15 single-source, 5
+multi-source, 5 unanswerable), run once with unchanged code, prompt and settings
+(`hybrid_rerank`, top 5 passages, `gpt-6-luna`):
+
+| Answers graded by me (pass / partial / fail) | Expected source in top 5 | Cites an expected source | Citation precision | Retrieval top-1 / MRR@10 |
+|---|---|---|---|---|
+| **22 / 3 / 0** | 20/20 | 20/20 | 0.91 | 16/20 / 0.887 |
+
+The three partials: a wrong domain in a link and an email (H10), a missed second source
+(H16), and a refusal without a pointer to the library (H25). Three of the five unanswerable
+questions scored above the refusal threshold and were declined by the LLM instead
+([review](eval/results/heldout-review.md), [retrieval by mode](eval/results/heldout-retrieval-summary.md)).
+
+**Development set:** the 40 acceptance questions that come with the source collection
 (38 have an expected source; the other two are a greeting and a live-vacancy question that
-must be declined). Settings: `hybrid_rerank`, top 5 passages, `gpt-6-luna`.
+must be declined), same settings:
 
 | Run | Change | Expected source in top 5 | Cites an expected source | Citation precision | Review (pass / partial / fail) |
 |---|---|---|---|---|---|
@@ -34,10 +48,9 @@ must be declined). Settings: `hybrid_rerank`, top 5 passages, `gpt-6-luna`.
 | run4 | question outside the tagged passages; retry for uncited replies | 38/38 | 38/38 | 0.89 | 14 re-read: 8 / 6 / 0 |
 | run5 | partial answers count as answers, not "not found" | 38/38 | 37/38 | 0.87 | not reviewed |
 
-**Read these numbers with care.** These 40 questions are the only test set: the prompt
-rules and the refusal threshold (0.02) were tuned on them, so they are a development
-benchmark, not a held-out score. The review column is LLM-graded
-(not by a human) against each question's rubric and the source texts. The LLM is not deterministic, so single grades can change between runs.
+The prompt rules and the refusal threshold (0.02) were tuned on these 40 questions, so this
+table shows development progress, not a held-out score. Its review column is
+LLM-graded (not by a human) against each question's rubric and the source texts. The LLM is not deterministic, so single grades can change between runs.
 
 **Three findings**
 
@@ -104,7 +117,8 @@ flowchart LR
 
 ## Limitations
 
-- Tested only on the 40 questions it was tuned on, and graded by an AI assistant.
+- The held-out test has only 25 questions, and the refusal threshold separates unanswerable
+  questions poorly on them (best scores up to 0.034 vs 0.036 for the weakest real question).
 - A snapshot from 18 November 2026: fees, deadlines and contacts need refreshing each
   semester; the official pages are authoritative. No live data (free rooms, appointments).
 - Some answers miss a detail or a source (run5: Q13 cites one of its two expected sources,
@@ -343,6 +357,7 @@ openai/azure and `max_tokens` elsewhere.
 ```bash
 python eval/run_eval.py --retrieval-only   # retrieval metrics, no LLM calls (~7 min on CPU)
 python eval/run_eval.py                    # full answers (40 LLM calls, ~8 min)
+python eval/run_eval.py --questions eval/heldout_questions.json --name heldout-full   # held-out set
 ```
 
 [eval/run_eval.py](eval/run_eval.py) runs the 40 acceptance questions in the collection's
